@@ -34,7 +34,7 @@ public class TCPSenderThread implements Runnable {
             while (payload != null && bytesSent < payload.length) {
             //while (true) {
                 int remainingBytes = payload.length - bytesSent;
-                int chunkSize = Math.min(remainingBytes, 10000);
+                int chunkSize = Math.min(remainingBytes, 1000000);
                 //byte[] data = queue.take();
                 //byte [] data = this.payload;
                 // int dataLength = data.length;

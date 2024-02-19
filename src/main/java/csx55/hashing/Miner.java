@@ -62,5 +62,12 @@ public class Miner {
         // Verification
         int leadingZeros = miner.leadingZeros(miner.sha256.digest(task.toBytes()));
         System.out.println("Task: " + task + " Leading zeros: " + leadingZeros);
+
+        Task task2 = new Task("192.168.0.1", 1234, 1, new Random().nextInt());
+        miner.mine(task);
+
+        // Verification
+        int leadingZeros2 = miner.leadingZeros(miner.sha256.digest(task.toBytes()));
+        System.out.println("Task: " + task + " Leading zeros: " + leadingZeros2);
     }
 }

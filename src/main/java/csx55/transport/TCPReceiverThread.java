@@ -1,14 +1,12 @@
 package csx55.transport;
 
 import csx55.domain.*;
+import csx55.hashing.Task;
 import csx55.node.MessagingNode;
 import csx55.node.Node;
 import csx55.node.Registry;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.Socket;
 
 public class TCPReceiverThread implements Runnable{
@@ -90,6 +88,15 @@ public class TCPReceiverThread implements Runnable{
                             LoadSummaryResponse traffic = new LoadSummaryResponse().unmarshal(data);
                             ((MessagingNode) node).handleLoadSummaryResponse(traffic);
                         }
+                        else if (domainType == Protocol.TASK) {
+                            Task task = new Task().unmarshal(data);
+                            ((MessagingNode) node).pullSingleTask(task);
+                        }
+                        else if (domainType == Protocol.TASK_LIST) {
+                            TaskList taskList = new TaskList().unmarshal(data);
+                            ((MessagingNode) node).pullTasks(taskList);
+                        }
+
 //                        else if (domainType == 3) {
 //                            TaskInitiate startTask = new TaskInitiate().unmarshal(data);
 //                            ((MessagingNode)node).initiateMessageRounds(startTask);
@@ -104,18 +111,16 @@ public class TCPReceiverThread implements Runnable{
                         }
                     }
                     catch (Exception ex) {
-                        //yeah well move on to the other payload type
-                        ex.printStackTrace();
-                        this.close();
+                        //yeah well move on to the other "exceptional" payload type
+                       ex.printStackTrace();
+                       this.close();
+                        //deserializeBytes(data);
                     }
-                    // System.out.println("Sent");
 
                 }
-                //now use data to cast to object -> EventFactory?
             } catch (Exception e) {
                 this.close();
                 e.printStackTrace();
-                //throw new RuntimeException(e);
             }
         }
     }

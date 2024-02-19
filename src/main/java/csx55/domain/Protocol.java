@@ -8,4 +8,10 @@ public interface Protocol {
     final int TOPOLOGY_INFO = 2;
 
     final int LOAD_SUMMARY = 4;
+
+    final int TEST_PAYLOAD = 5;
+
+    final int TASK = 6;
+
+    final int TASK_LIST = 7;
 }
