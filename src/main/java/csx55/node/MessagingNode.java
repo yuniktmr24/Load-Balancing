@@ -16,6 +16,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 public class MessagingNode implements Node{
@@ -30,7 +31,8 @@ public class MessagingNode implements Node{
 
     private Map<String, TCPConnection> peerConnections = new ConcurrentHashMap<>();
 
-    private Map <String, Integer> loadMap = new HashMap<>();
+    //contains loads from all peers (not from self though)
+    private Map <String, Integer> loadMap = new ConcurrentHashMap<>();
 
     private StatsEngine stats = new StatsEngine();
 
@@ -50,7 +52,7 @@ public class MessagingNode implements Node{
         this.nodePort = nodePort;
     }
 
-    private List <Task> currentTasks = new ArrayList<>();
+    private List <Task> currentTasks = Collections.synchronizedList(new ArrayList<>());
 
 
 
@@ -96,9 +98,16 @@ public class MessagingNode implements Node{
             currentTasks.add(task);
         }
         stats.setGeneratedCount(numTasks);
+        stats.setCurrentTasks(numTasks);
     }
 
     private void loadBalance() {
+        int maxLoadInNetwork = this.loadMap.values().stream()
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(Integer.MIN_VALUE);
+
+
 
     }
 
@@ -171,33 +180,61 @@ public class MessagingNode implements Node{
                 else if (userInput.equals(UserCommands.MESSAGE_NEIGHBOR.getCmd()) || userInput.equals(String.valueOf(UserCommands.MESSAGE_NEIGHBOR.getCmdId()))) {
                     talkToNeighbor();
                 }
+                //for testing
                 else if (userInput.equals(UserCommands.SEND_TEST_WIRE.getCmd()) || userInput.equals(String.valueOf(UserCommands.SEND_TEST_WIRE.getCmdId()))) {
-                    Task task = new Task("192.168.0.1", 1234, 1, new Random().nextInt());
+                    //Task task = new Task("192.168.0.1", 1234, 1, new Random().nextInt());
+                    //send most recent node over the wire
+                    Task task = this.currentTasks.get(this.currentTasks.size() - 1);
+
                     this.peerConnections.forEach((k, v) -> {
                         try {
                             //send only one task for test
-                            pushTask(task, v); //v=connection
+                            if (task.getOriginNode().isEmpty()) {
+                                task.setOriginNode(nodeIP + ":" + nodePort);
+                                pushTask(task, v); //v=connection
+                            }
+                            else {
+                                System.out.println("Omitted single push because of oscillation " + task.toString());
+                                //send second last then
+                                this.currentTasks.get(this.currentTasks.size() - 2).setOriginNode(nodeIP + ":" + nodePort);
+                                pushTask(this.currentTasks.get(this.currentTasks.size() - 2), v); //v=connection
+                            }
                         } catch (Exception e) {
                             logger.severe("Error talking to neighbor");
                             throw new RuntimeException(e);
                         }
                     });
                 }
+                //for testing
                 else if (userInput.equals(UserCommands.SEND_TEST_WIRE_BULK.getCmd()) || userInput.equals(String.valueOf(UserCommands.SEND_TEST_WIRE_BULK.getCmdId()))) {
+                    /* dummy tasks for test
                     Task task = new Task("192.168.0.1", 1234, 1, new Random().nextInt());
                     Task task2 = new Task("192.168.0.1", 1234, 1, new Random().nextInt());
                     Task task3 = new Task("192.168.0.1", 1234, 1, new Random().nextInt());
+                    */
+                    //send only one for test
+                    int oscillatingTasks = 0;
+                    for (int i = 0; i < this.currentTasks.size(); i++) {
+                        if (this.currentTasks.get(i).getOriginNode().isEmpty()) {
+                            oscillatingTasks++;
+                        }
 
-                    Task [] tasklist = new Task[3];
-                    tasklist[0] = task;
-                    tasklist[1] = task2;
-                    tasklist[2] = task3;
+                    }
+                    Random rand = new Random();
+                    int randomTasksToSend = rand.nextInt(this.currentTasks.size() - oscillatingTasks) + 1;
+                    Task [] tasklist = new Task[randomTasksToSend];
+                    for (int idx = 0; idx < randomTasksToSend; idx++) {
+                        if (this.currentTasks.get(idx).getOriginNode().isEmpty()) {
+                            tasklist[idx] = this.currentTasks.get(idx);
+                            this.currentTasks.get(idx).setOriginNode(nodeIP+":"+nodePort);
+                        }
+                    }
+                    System.out.println("Picked "+ randomTasksToSend + " to send over the wire randomly"+ " Omitted "+ oscillatingTasks + " oscillating tasks ");
 
-                    TaskList taskList = new TaskList(tasklist);
                     this.peerConnections.forEach((k, v) -> {
                         try {
-                            //send only one for test
-                            pushTasks(taskList, v); //v=connection
+                            TaskList taskList = new TaskList(tasklist);
+                            pushTasks(taskList, v, k); //v=connection
 
                         } catch (Exception e) {
                             logger.severe("Error talking to neighbor");
@@ -309,9 +346,7 @@ public class MessagingNode implements Node{
                connection.getSenderThread().sendData(conn.marshal());
                connection.startConnection();
 
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            } catch (InterruptedException e) {
+            } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
         }
@@ -335,10 +370,10 @@ public class MessagingNode implements Node{
     public synchronized void handleLoadSummaryResponse(LoadSummaryResponse traffic) {
         //loadMap.clear();
         if (loadMap.containsKey(traffic.getNodeIP()+":"+traffic.getNodePort())) {
-            loadMap.replace(traffic.getNodeIP()+":"+traffic.getNodePort(), traffic.getGeneratedTasks());
+            loadMap.replace(traffic.getNodeIP()+":"+traffic.getNodePort(), traffic.getCurrentTasks());
         }
         else {
-            loadMap.put(traffic.getNodeIP() + ":" + traffic.getNodePort(), traffic.getGeneratedTasks());
+            loadMap.put(traffic.getNodeIP() + ":" + traffic.getNodePort(), traffic.getCurrentTasks());
         }
 
     }
@@ -347,6 +382,7 @@ public class MessagingNode implements Node{
         try {
             targetNode.getSenderThread().sendData(task.marshal());
             stats.incrementPushCount();
+            stats.decrementCurrentTasks();
             currentTasks.removeIf(el -> el.getPayload() == task.getPayload());
             System.out.println("Pushed "+ task.toString());
             printCurrentTasks("After single push");
@@ -355,12 +391,17 @@ public class MessagingNode implements Node{
         }
     }
 
-    public synchronized void pushTasks(TaskList taskList, TCPConnection targetNode) {
+    public synchronized void pushTasks(TaskList taskList, TCPConnection targetNode, String targetNodeInfo) {
         try {
+            if (taskList.getTasks().length == 0) {
+                System.out.println("Nothing to push ");
+                return;
+            }
             targetNode.getSenderThread().sendData(taskList.marshal());
             for (int i = 0; i < taskList.getTasks().length; i++) {
                 Task pushedTask = taskList.getTasks()[i];
                 stats.incrementPushCount();
+                stats.decrementCurrentTasks();
                 currentTasks.removeIf(el -> el.getPayload() == pushedTask.getPayload());
             }
             printCurrentTasks("(After bulk push)");
@@ -374,6 +415,7 @@ public class MessagingNode implements Node{
         for (Task task: taskList.getTasks()) {
             System.out.println(task.toString());
             currentTasks.add(task);
+            stats.incrementCurrentTasks();
             stats.incrementPullCount();
         }
         printCurrentTasks("(After bulk pull)");
@@ -382,6 +424,7 @@ public class MessagingNode implements Node{
     public synchronized void pullSingleTask(Task task) {
         System.out.println("Pulled task "+ task.toString());
         currentTasks.add(task);
+        stats.incrementCurrentTasks();
         printCurrentTasks("(After Single pull)");
         stats.incrementPullCount();
     }
@@ -389,7 +432,9 @@ public class MessagingNode implements Node{
     private void printCurrentTasks(String appendum) {
         System.out.println("Current tasks list elements : " + appendum);
         for (Task tsk: currentTasks) {
-            System.out.println(tsk.toString());
+            System.out.println(tsk.toString() + " origin node "+tsk.getOriginNode());
         }
+        System.out.println("Number of current tasks "+ currentTasks.size());
+        System.out.println("Number of current tasks as per statsEngine "+ stats.getCurrentTasks());
     }
 }

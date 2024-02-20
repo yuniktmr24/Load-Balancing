@@ -4,6 +4,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class StatsEngine {
+    private AtomicInteger currentTasks;
     private AtomicInteger generatedTasks;
 
     private AtomicInteger pulledTasks;
@@ -14,6 +15,7 @@ public class StatsEngine {
 
 
     public StatsEngine() {
+        this.currentTasks = new AtomicInteger(0);
         this.generatedTasks = new AtomicInteger( 0 );
         this.pulledTasks = new AtomicInteger( 0 );
         this.pushedTasks = new AtomicInteger( 0 );
@@ -39,6 +41,7 @@ public class StatsEngine {
 
 
     public void reset() {
+        this.currentTasks.set(0);
         this.generatedTasks.set( 0 );
         this.completedTasks.set( 0 );
         this.pushedTasks.set( 0 );
@@ -52,6 +55,7 @@ public class StatsEngine {
                 ", pulledTasks=" + pulledTasks +
                 ", pushedTasks=" + pushedTasks +
                 ", completedTasks=" + completedTasks +
+                ", currentTasks = " + currentTasks +
                 '}';
     }
 
@@ -69,5 +73,21 @@ public class StatsEngine {
 
     public AtomicInteger getCompletedTasks() {
         return completedTasks;
+    }
+
+    public AtomicInteger getCurrentTasks() {
+        return currentTasks;
+    }
+
+    public void setCurrentTasks(int currentTasks) {
+        this.currentTasks.set(currentTasks);
+    }
+
+    public void incrementCurrentTasks () {
+        this.currentTasks.getAndIncrement();
+    }
+
+    public void decrementCurrentTasks () {
+        this.currentTasks.getAndDecrement();
     }
 }

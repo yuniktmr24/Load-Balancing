@@ -10,6 +10,8 @@ public class LoadSummaryResponse implements Marshallable{
 
         private int nodePort;
 
+        private int currentTasks;
+
         private int generatedTasks;
 
         private int completedTasks;
@@ -22,6 +24,7 @@ public class LoadSummaryResponse implements Marshallable{
                                    StatsEngine stats) {
             this.nodeIP = host;
             this.nodePort = port;
+            this.currentTasks = stats.getCurrentTasks().get();
             this.completedTasks = stats.getCompletedTasks().get();
             this.generatedTasks = stats.getGeneratedTasks().get();
             this.pushedTasks = stats.getPushedTasks().get();
@@ -45,6 +48,7 @@ public class LoadSummaryResponse implements Marshallable{
         dout.write( hostBytes );
 
         dout.writeInt( nodePort );
+        dout.writeInt(currentTasks);
         dout.writeInt(generatedTasks);
         dout.writeInt(completedTasks);
         dout.writeInt(pushedTasks);
@@ -73,6 +77,7 @@ public class LoadSummaryResponse implements Marshallable{
         this.nodeIP = new String( hostBytes );
 
         this.nodePort = din.readInt();
+        this.currentTasks = din.readInt();
         this.generatedTasks = din.readInt();
         this.completedTasks = din.readInt();
         this.pushedTasks = din.readInt();
@@ -115,6 +120,10 @@ public class LoadSummaryResponse implements Marshallable{
 
     public int getNodePort() {
         return nodePort;
+    }
+
+    public int getCurrentTasks() {
+        return currentTasks;
     }
 }
 

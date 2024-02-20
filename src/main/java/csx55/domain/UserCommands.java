@@ -20,9 +20,10 @@ public enum UserCommands {
 
     PRINT_NUM_COMPLETED_TASKS("print-num-completed-tasks", 11, Collections.singletonList(NodeType.MESSAGE_NODE)),
 
-    SEND_TEST_WIRE("send-wire", 12, Collections.singletonList(NodeType.MESSAGE_NODE)),
+    SEND_TEST_WIRE("send-wire (DEBUG ONLY)", 12, Collections.singletonList(NodeType.MESSAGE_NODE)),
 
-    SEND_TEST_WIRE_BULK("send-wire-bulk", 13, Collections.singletonList(NodeType.MESSAGE_NODE)),
+    SEND_TEST_WIRE_BULK("send-wire-bulk (DEBUG ONLY)", 13, Collections.singletonList(NodeType.MESSAGE_NODE)),
+
     EXIT("exit", -1, Arrays.asList(NodeType.REGISTRY, NodeType.MESSAGE_NODE));
     private final String cmd;
     private final int cmdId;

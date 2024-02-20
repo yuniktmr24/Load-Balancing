@@ -18,6 +18,9 @@ public class Task implements Marshallable {
     private long threadId;
     private int nonce;
 
+    //node where this data originated. we do not want it to oscillate back to the origin.
+    private String originNode = "";
+
     public Task(String ip, int port, int roundNumber, int payload) {
         this.ip = ip;
         this.port = port;
@@ -72,6 +75,14 @@ public class Task implements Marshallable {
         return nonce;
     }
 
+    public String getOriginNode() {
+        return originNode;
+    }
+
+    public void setOriginNode(String originNode) {
+        this.originNode = originNode;
+    }
+
     public String toString() {
         return ip + ":" + port + ":" + roundNumber + ":" + payload + ":" + timestamp + ":" + threadId + ":" + nonce;
     }
@@ -85,14 +96,6 @@ public class Task implements Marshallable {
         ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(marshalledBytes);
         DataInputStream din = new DataInputStream(new BufferedInputStream(byteArrayInputStream));
         din.readInt();
-
-        // private final String ip;
-        //    private final int port;
-        //    private final int roundNumber;
-        //    private final int payload;
-        //    private long timestamp;
-        //    private long threadId;
-        //    private int nonce;
         // Read the length first
         int ipAddressLength = din.readInt();
         // Allocate the byte array for the IP address
@@ -109,7 +112,16 @@ public class Task implements Marshallable {
         long threadId = din.readLong();
         int nonce = din.readInt();
 
+        int originNodeLength = din.readInt();
+        // Allocate the byte array for the IP address
+        byte[] originNodeBytes = new byte[originNodeLength];
+        // Read the data into the byte array
+        din.readFully(originNodeBytes);
+
+        String originNode = new String(originNodeBytes);
+
         task.setNonce(nonce);
+        task.setOriginNode(originNode);
 
         byteArrayInputStream.close();
         din.close();
@@ -132,6 +144,10 @@ public class Task implements Marshallable {
         dout.writeLong(timestamp);
         dout.writeLong(threadId);
         dout.writeInt(nonce);
+        byte[] originNodeBytes = this.originNode.getBytes();
+        int originNodeLength = originNodeBytes.length;
+        dout.writeInt(originNodeLength);
+        dout.write(originNodeBytes);
 
         dout.flush();
 
