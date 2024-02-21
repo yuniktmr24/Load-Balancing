@@ -16,6 +16,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 public class MessagingNode implements Node{
@@ -24,7 +25,9 @@ public class MessagingNode implements Node{
 
     private String nodeIP;
     private int nodePort;
-    private final ThreadPool threadPool = new ThreadPool(new Random().nextInt(15) + 2, 10);
+
+    //threadpool size comes in from registry TODO
+    private final ThreadPool threadPool = new ThreadPool(new Random().nextInt(15) + 2, 1000);
 
     private List <String> neighbors = new ArrayList<>();
 
@@ -95,7 +98,7 @@ public class MessagingNode implements Node{
         int minTasks = 1;
         int numTasks = rand.nextInt(maxTasks - 1) + minTasks;
         for (int idx = 0; idx < numTasks; idx++) {
-            Task task = new Task("192.168.0.1", 1234, 1, new Random().nextInt());
+            Task task = new Task(nodeIP, nodePort, 1, new Random().nextInt());
             currentTasks.add(task);
         }
         System.out.println("Generated "+ numTasks + " tasks");
@@ -159,6 +162,7 @@ public class MessagingNode implements Node{
                 TaskList pullTask = new TaskList(difference, nodeIP+":"+nodePort);
                 this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(pullTask.marshal());
 
+                TimeUnit.SECONDS.sleep(5);
                 System.out.println("Updated self load after balance substeps = " + selfLoad);
                 currentMaxLoad = currentMaxLoad - difference;
 
@@ -230,6 +234,7 @@ public class MessagingNode implements Node{
         });
         System.out.println("Load balancing done");
         printCurrentLoadMap();
+        submitTasks();
     }
 
     private Optional<Map.Entry<String, Integer>> getMaxLoadEntrySet () {
@@ -248,12 +253,10 @@ public class MessagingNode implements Node{
 
 
 
-    private void submitTasks (int numTasks) {
-
-
+    private void submitTasks () {
         //TODO : before submitting, we perform load balancing maneuvers.
         //TODO: maybe use a task list.size() because the task list content will change after load balancing
-        for (int i = 0; i < numTasks; i++) {
+        for (int i = 0; i < currentTasks.size(); i++) {
             int taskNo = i;
 
             //submit task
@@ -385,12 +388,15 @@ public class MessagingNode implements Node{
                         System.out.println(entry.getKey() + "\t" + entry.getValue());
                     });
                     System.out.println(nodeIP+":"+nodePort+ " (self) "+"\t Generated: "+ stats.getGeneratedTasks().get() + "\t pulled : "
-                            + stats.getPulledTasks() + "\t pushed : "+ stats.getPushedTasks());
+                            + stats.getPulledTasks() + "\t pushed : "+ stats.getPushedTasks() + "\t completed : "+stats.getCompletedTasks());
 
                 }
                 else if (userInput.equals(UserCommands.PRINT_NUM_COMPLETED_TASKS.getCmd()) || userInput.equals(String.valueOf(UserCommands.PRINT_NUM_COMPLETED_TASKS.getCmdId()))) {
                     getTotalTasks();
                     System.out.println("Number of completed tasks : " + stats.getCompletedTasks());
+                }
+                else if (userInput.equals(UserCommands.PRINT_NUM_CURRENT_TASKS.getCmd()) || userInput.equals(String.valueOf(UserCommands.PRINT_NUM_CURRENT_TASKS.getCmdId()))) {
+                    System.out.println("Number of current tasks : " + stats.getCurrentTasks());
                 }
                 else if (userInput.equals(UserCommands.MANUAL_LOAD_BALANCE.getCmd()) || userInput.equals(String.valueOf(UserCommands.MANUAL_LOAD_BALANCE.getCmdId()))) {
                     Thread loadBalanceThread = new Thread(() -> {
