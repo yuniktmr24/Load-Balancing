@@ -94,7 +94,11 @@ public class TCPReceiverThread implements Runnable{
                         }
                         else if (domainType == Protocol.TASK_LIST) {
                             TaskList taskList = new TaskList().unmarshal(data);
-                            ((MessagingNode) node).pullTasks(taskList);
+                            ((MessagingNode) node).handleTaskMigrations(taskList);
+                        }
+                        else if (domainType == Protocol.BALANCED_NODES) {
+                            BalancedNodes balanced = new BalancedNodes().unmarshal(data);
+                            ((MessagingNode) node).copyStaticBalancedNodesInfoToLocal(balanced);
                         }
 
 //                        else if (domainType == 3) {

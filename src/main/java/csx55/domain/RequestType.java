@@ -10,5 +10,7 @@ public enum RequestType {
 
     PEER_MESSAGE,
 
-    PULL_TRAFFIC_SUMMARY
+    PULL_TRAFFIC_SUMMARY,
+
+    LOAD_UPDATE
 }

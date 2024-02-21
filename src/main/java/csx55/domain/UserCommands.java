@@ -24,6 +24,8 @@ public enum UserCommands {
 
     SEND_TEST_WIRE_BULK("send-wire-bulk (DEBUG ONLY)", 13, Collections.singletonList(NodeType.MESSAGE_NODE)),
 
+    MANUAL_LOAD_BALANCE("manual-load-balance (DEBUG ONLY)", 14, Collections.singletonList(NodeType.MESSAGE_NODE)),
+
     EXIT("exit", -1, Arrays.asList(NodeType.REGISTRY, NodeType.MESSAGE_NODE));
     private final String cmd;
     private final int cmdId;

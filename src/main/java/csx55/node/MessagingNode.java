@@ -16,7 +16,6 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
 public class MessagingNode implements Node{
@@ -54,6 +53,8 @@ public class MessagingNode implements Node{
 
     private List <Task> currentTasks = Collections.synchronizedList(new ArrayList<>());
 
+    private List <String> balancedNodesLocalCopy = Collections.synchronizedList(new ArrayList<>());
+
 
 
     public static void main(String[] args) throws IOException {
@@ -90,26 +91,162 @@ public class MessagingNode implements Node{
 
     private void generateTasks() {
         Random rand = new Random();
-        int maxTasks = 10; //1000;
+        int maxTasks = 1000; //1000;
         int minTasks = 1;
         int numTasks = rand.nextInt(maxTasks - 1) + minTasks;
         for (int idx = 0; idx < numTasks; idx++) {
             Task task = new Task("192.168.0.1", 1234, 1, new Random().nextInt());
             currentTasks.add(task);
         }
+        System.out.println("Generated "+ numTasks + " tasks");
         stats.setGeneratedCount(numTasks);
         stats.setCurrentTasks(numTasks);
+        int selfLoad = stats.getCurrentTasks().get();
+        this.loadMap.put(this.nodeIP+":"+this.nodePort, selfLoad);
     }
 
-    private void loadBalance() {
-        int maxLoadInNetwork = this.loadMap.values().stream()
+    private void loadBalance() throws IOException, InterruptedException {
+        //lets add the current nodes load to the loadMap which has peer loads
+        System.out.println("Starting load balancing");
+        int selfLoad = stats.getCurrentTasks().get();
+//        this.loadMap.put(this.nodeIP+":"+this.nodePort, selfLoad);
+
+        //exclude balanced nodes from compute
+        Optional<Map.Entry<String, Integer>> entryWithMaxValue = getMaxLoadEntrySet();
+        Optional<Map.Entry<String, Integer>> entryWithMinValue = getMinLoadEntrySet();
+
+        Map.Entry<String, Integer> maxEntry = entryWithMaxValue.get();
+        int maxLoadInNetwork = maxEntry.getValue();
+        String nodeWithMaxLoad = maxEntry.getKey();
+
+        Map.Entry<String, Integer> minEntry = entryWithMinValue.get();
+        int minLoadInNetwork = minEntry.getValue();
+        String nodeWithMinLoad = minEntry.getKey();
+
+        //this means there is only one unbalanced node, (which is self). So, we terminate
+        //as other nodes have already attained equilibrium.
+        if (nodeWithMaxLoad.equals(nodeWithMinLoad)) {
+            System.out.println("All other nodes balanced. So no other node available for" +
+                    " further balance ops. So terminating");
+            printCurrentLoadMap();
+            //TODO: maybe send registry a message saying load balance done
+            return;
+        }
+
+        //target load for convergence operations
+        int targetLoadInNetwork = (int) Math.floor(this.loadMap.values().stream()
                 .mapToInt(Integer::intValue)
-                .max()
-                .orElse(Integer.MIN_VALUE);
+                .average()
+                .orElseThrow());
 
+        int currentAverage = targetLoadInNetwork;
+        int currentMaxLoad;
+        int currentMinLoad;
 
+        System.out.println("Global target load size after balance "+ targetLoadInNetwork);
+        System.out.println("Initial load size in this node "+ selfLoad);
+        while (selfLoad != targetLoadInNetwork) {
+            if (selfLoad < targetLoadInNetwork) {
+                Optional<Map.Entry<String, Integer>> entryWithMaxValueTemp = getMaxLoadEntrySet();
+                Map.Entry<String, Integer> maxEntryTemp = entryWithMaxValueTemp.get();
+                currentMaxLoad = maxEntryTemp.getValue();
+                nodeWithMaxLoad = maxEntryTemp.getKey();
 
+                currentAverage = (currentMaxLoad + selfLoad) / 2;
+                int difference = Math.abs(currentAverage - selfLoad);
+                selfLoad = selfLoad + difference;
+                //pull tasks; [TODO fix NPE here]
+                TaskList pullTask = new TaskList(difference, nodeIP+":"+nodePort);
+                this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(pullTask.marshal());
+
+                System.out.println("Updated self load after balance substeps = " + selfLoad);
+                currentMaxLoad = currentMaxLoad - difference;
+
+                //update own load map with intermediate values
+                this.loadMap.put(nodeWithMaxLoad, currentMaxLoad);
+                this.loadMap.put(nodeIP+":"+nodePort, selfLoad);
+                //TODO: ALso need to send/receive tasks over the wire
+                //propagate this change to the maxLoad keynode
+                ServerResponse res = new ServerResponse(RequestType.LOAD_UPDATE, StatusCode.SUCCESS, nodeWithMaxLoad + "->" + String.valueOf(currentMaxLoad));
+                //send task to only specific node, but inform all other nodes about the update todo
+                this.peerConnections.forEach((k, v) -> {
+                    try {
+                        v.getSenderThread().sendData(res.marshal());
+                    } catch (InterruptedException | IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+                //this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(res.marshal());
+            }
+            else {
+                Optional<Map.Entry<String, Integer>> entryWithMinValueTemp = getMinLoadEntrySet();
+                Map.Entry<String, Integer> minEntryTemp = entryWithMinValueTemp.get();
+                currentMinLoad = minEntryTemp.getValue();
+                nodeWithMinLoad = minEntryTemp.getKey();
+
+                currentAverage = (currentMinLoad + selfLoad) / 2;
+                int difference = Math.abs(selfLoad - currentAverage);
+                selfLoad = selfLoad - difference;
+                //TODO L fix npe
+                pushNTasks(difference, nodeWithMinLoad);
+                System.out.println("Updated self load after balance substeps = " + selfLoad);
+                currentMinLoad = currentMinLoad + difference;
+                //update own load map with intermediate values
+                this.loadMap.put(nodeWithMinLoad, currentMinLoad);
+                this.loadMap.put(nodeIP+":"+nodePort, selfLoad);
+                //propagate this change to the maxLoad keynode
+                ServerResponse res = new ServerResponse(RequestType.LOAD_UPDATE, StatusCode.SUCCESS, nodeWithMinLoad + "->"+ String.valueOf(currentMinLoad));
+                this.peerConnections.forEach((k, v) -> {
+                    try {
+                        v.getSenderThread().sendData(res.marshal());
+                    } catch (InterruptedException | IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+                //this.peerConnections.get(nodeWithMinLoad).getSenderThread().sendData(res.marshal());
+            }
+        }
+        //this node has balanced load. we're done here. broadcast that this
+        //node is balanced and should not be factored into load balancing
+        //TODO
+        System.out.println("Final self load after balance completed = " + selfLoad);
+        this.loadMap.replace(nodeIP+":"+nodePort, selfLoad);
+
+        balancedNodesLocalCopy.add(this.nodeIP+":"+this.nodePort);
+
+        //inform peers about balanced node update as well
+        BalancedNodes staticBalancerInfo = new BalancedNodes();
+        staticBalancerInfo.setBalancedNodeInfo(this.nodeIP+":"+this.nodePort+"->"+selfLoad);
+        BalancedNodes.addBalancedNode(this.nodeIP+":"+this.nodePort);
+
+        //create balanced node message payload TODO
+        //send balanced node message to all peers
+        peerConnections.forEach((k, v) -> {
+            try {
+                v.getSenderThread().sendData(staticBalancerInfo.marshal());
+            } catch (InterruptedException | IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        System.out.println("Load balancing done");
+        printCurrentLoadMap();
     }
+
+    private Optional<Map.Entry<String, Integer>> getMaxLoadEntrySet () {
+        Optional<Map.Entry<String, Integer>> entryWithMaxValue = loadMap.entrySet().stream()
+                .filter(entry -> !balancedNodesLocalCopy.contains(entry.getKey()))
+                .max(Map.Entry.comparingByValue());
+        return entryWithMaxValue;
+    }
+
+    private Optional<Map.Entry<String, Integer>> getMinLoadEntrySet () {
+        Optional<Map.Entry<String, Integer>> entryWithMinValue = loadMap.entrySet().stream()
+                .filter(entry -> !balancedNodesLocalCopy.contains(entry.getKey()))
+                .min(Map.Entry.comparingByValue());
+        return entryWithMinValue;
+    }
+
+
 
     private void submitTasks (int numTasks) {
 
@@ -233,7 +370,7 @@ public class MessagingNode implements Node{
 
                     this.peerConnections.forEach((k, v) -> {
                         try {
-                            TaskList taskList = new TaskList(tasklist);
+                            TaskList taskList = new TaskList(tasklist, TaskOperations.PUSH);
                             pushTasks(taskList, v, k); //v=connection
 
                         } catch (Exception e) {
@@ -254,6 +391,16 @@ public class MessagingNode implements Node{
                 else if (userInput.equals(UserCommands.PRINT_NUM_COMPLETED_TASKS.getCmd()) || userInput.equals(String.valueOf(UserCommands.PRINT_NUM_COMPLETED_TASKS.getCmdId()))) {
                     getTotalTasks();
                     System.out.println("Number of completed tasks : " + stats.getCompletedTasks());
+                }
+                else if (userInput.equals(UserCommands.MANUAL_LOAD_BALANCE.getCmd()) || userInput.equals(String.valueOf(UserCommands.MANUAL_LOAD_BALANCE.getCmdId()))) {
+                    Thread loadBalanceThread = new Thread(() -> {
+                        try {
+                            node.loadBalance();
+                        } catch (IOException | InterruptedException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+                    loadBalanceThread.start();
                 }
             }
 
@@ -298,6 +445,16 @@ public class MessagingNode implements Node{
             } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
+        }
+        else if (res.getRequestType() != null && res.getRequestType().equals(RequestType.LOAD_UPDATE)) {
+            //TODO TOPLAN: Might need to implement the token based approach. Say node x modifies the load count
+            //for this node, but if this node already did its compute with the old value, then we have a problem
+            System.out.println("Old load map");
+            printCurrentLoadMap();
+            System.out.println("[LOAD BALANCING] Updated load received from peer node");
+            String [] updatedLoadInfo = res.getAdditionalInfo().split("->");
+            this.loadMap.replace(updatedLoadInfo[0], Integer.parseInt(updatedLoadInfo[1]));
+            printCurrentLoadMap();
         }
     }
 
@@ -404,21 +561,30 @@ public class MessagingNode implements Node{
                 stats.decrementCurrentTasks();
                 currentTasks.removeIf(el -> el.getPayload() == pushedTask.getPayload());
             }
-            printCurrentTasks("(After bulk push)");
+           // printCurrentTasks("(After bulk push)");
         } catch (InterruptedException | IOException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public synchronized void pullTasks(TaskList taskList) {
-        System.out.println("Pulled tasks # "+ taskList.getTasks().length);
-        for (Task task: taskList.getTasks()) {
-            System.out.println(task.toString());
-            currentTasks.add(task);
-            stats.incrementCurrentTasks();
-            stats.incrementPullCount();
+    //remember this is happening in receiver node. Not sender node. So the operations enum
+    //reflect the original command in the sender. For pull in receiver, the sender will
+    //have a push operation, which is what the payload will have
+    public synchronized void handleTaskMigrations(TaskList taskList) {
+        if (taskList.getOperations().equals(TaskOperations.PUSH)) {
+            System.out.println("Pulled tasks # " + taskList.getTasks().length);
+            for (Task task : taskList.getTasks()) {
+                System.out.println(task.toString());
+                currentTasks.add(task);
+                stats.incrementCurrentTasks();
+                stats.incrementPullCount();
+            }
         }
-        printCurrentTasks("(After bulk pull)");
+        //pull
+        else {
+            pushNTasks(taskList.getRequestedTaskNum(), taskList.getRequestingNode());
+        }
+        //printCurrentTasks("(After bulk pull)");
     }
 
     public synchronized void pullSingleTask(Task task) {
@@ -436,5 +602,72 @@ public class MessagingNode implements Node{
         }
         System.out.println("Number of current tasks "+ currentTasks.size());
         System.out.println("Number of current tasks as per statsEngine "+ stats.getCurrentTasks());
+    }
+
+    public synchronized void copyStaticBalancedNodesInfoToLocal(BalancedNodes balanced) {
+        this.balancedNodesLocalCopy.addAll(Arrays.asList(BalancedNodes.getBalancedNodes()));
+        System.out.println("Updated balanced nodes list in this node.");
+
+        String balanceNodeId = balanced.getBalancedNodeInfo().split("->")[0];
+        int balancedNodeLoad = Integer.parseInt(balanced.getBalancedNodeInfo().split("->")[1]);
+        this.loadMap.replace(balanceNodeId, balancedNodeLoad);
+
+        printBalancedNodesInfo();
+        printCurrentLoadMap();
+    }
+
+    private void printBalancedNodesInfo() {
+        System.out.println("Currently balanced nodes local info: ");
+        for (String blNode: balancedNodesLocalCopy) {
+            System.out.println(blNode);
+        }
+        System.out.println("Currently balanced nodes static info  ");
+        for (String blNode: BalancedNodes.getBalancedNodes()) {
+            System.out.println(blNode);
+        }
+    }
+
+    private void printCurrentLoadMap() {
+        System.out.println("Current load map in this node ");
+        for (Map.Entry<String, Integer> entry: loadMap.entrySet()) {
+            String self = (nodeIP+":"+nodePort).equals(entry.getKey()) ? "self" : "";
+            System.out.println("Node: "+ entry.getKey()+ " | Current Load : "+ entry.getValue() + self);
+        }
+    }
+
+    private synchronized void pushNTasks (int n, String targetNode) {
+        //oscillation damping logic
+        /*
+        int oscillatingTasks = 0;
+        for (int i = 0; i < this.currentTasks.size(); i++) {
+            if (this.currentTasks.get(i).getOriginNode().isEmpty()) {
+                oscillatingTasks++;
+            }
+
+        }
+        Random rand = new Random();
+        int randomTasksToSend = rand.nextInt(this.currentTasks.size() - oscillatingTasks) + 1;
+        Task [] tasklist = new Task[randomTasksToSend];
+        for (int idx = 0; idx < randomTasksToSend; idx++) {
+            if (this.currentTasks.get(idx).getOriginNode().isEmpty()) {
+                tasklist[idx] = this.currentTasks.get(idx);
+                this.currentTasks.get(idx).setOriginNode(nodeIP+":"+nodePort);
+            }
+        }
+        */
+        Task [] tasklist = new Task[n];
+        for (int idx = 0; idx < n; idx++) {
+            tasklist[idx] = this.currentTasks.get(idx);
+            //this.currentTasks.get(idx).setOriginNode(nodeIP+":"+nodePort);
+        }
+        TCPConnection targetConn = this.peerConnections.get(targetNode);
+        try {
+            TaskList taskList = new TaskList(tasklist, TaskOperations.PUSH);
+            pushTasks(taskList, targetConn, targetNode); //v=connection
+
+        } catch (Exception e) {
+            logger.severe("Error pushing load");
+            throw new RuntimeException(e);
+        }
     }
 }

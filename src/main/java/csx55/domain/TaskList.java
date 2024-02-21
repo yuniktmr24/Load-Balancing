@@ -7,8 +7,23 @@ public class TaskList implements Marshallable {
     private final int type = Protocol.TASK_LIST;
     private Task [] tasks;
 
-    public TaskList(Task[] tasks) {
+    private TaskOperations operations;
+
+    private int requestedTaskNum = 0 ; //during pull request
+
+    private String requestingNode = ""; //during pull request
+
+    public TaskList(Task[] tasks, TaskOperations oper) {
+
         this.tasks = tasks;
+        this.operations = oper;
+    }
+
+    public TaskList(int numPull, String pullTarget) {
+        this.tasks = new Task[0];
+        this.operations = TaskOperations.PULL;
+        this.requestedTaskNum = numPull;
+        this.requestingNode = pullTarget;
     }
 
     public TaskList() {
@@ -33,7 +48,18 @@ public class TaskList implements Marshallable {
             tasks[i] = task.unmarshal(taskBytes); // Unmarshal each task
         }
 
-        TaskList taskList = new TaskList(tasks);
+        TaskOperations oper = TaskOperations.values()[din.readInt()];
+
+        int requestedNumTasks = din.readInt();
+
+        int requestingNodeLength = din.readInt();
+        byte[] reqNodeBytes = new byte[requestingNodeLength];
+        din.readFully(reqNodeBytes);
+        String reqNode = new String(reqNodeBytes);
+
+        TaskList taskList = new TaskList(tasks, oper);
+        taskList.setRequestedTaskNum(requestedNumTasks);
+        taskList.setRequestingNode(reqNode);
 
         byteArrayInputStream.close();
         din.close();
@@ -53,6 +79,13 @@ public class TaskList implements Marshallable {
             dout.writeInt(taskBytes.length); // Write length of task bytes
             dout.write(taskBytes); // Write task bytes
         }
+        dout.writeInt(operations.ordinal());
+        dout.writeInt(this.requestedTaskNum);
+
+        byte[] requestingNodeBytes = this.requestingNode.getBytes();
+        int reqNodeLength = requestingNodeBytes.length;
+        dout.writeInt(reqNodeLength);
+        dout.write(requestingNodeBytes);
 
         dout.flush();
 
@@ -65,5 +98,29 @@ public class TaskList implements Marshallable {
 
     public Task[] getTasks() {
         return tasks;
+    }
+
+    public TaskOperations getOperations() {
+        return operations;
+    }
+
+    public void setOperations(TaskOperations operations) {
+        this.operations = operations;
+    }
+
+    public int getRequestedTaskNum() {
+        return requestedTaskNum;
+    }
+
+    public void setRequestedTaskNum(int requestedTaskNum) {
+        this.requestedTaskNum = requestedTaskNum;
+    }
+
+    public String getRequestingNode() {
+        return requestingNode;
+    }
+
+    public void setRequestingNode(String requestingNode) {
+        this.requestingNode = requestingNode;
     }
 }
