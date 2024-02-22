@@ -1,10 +1,7 @@
 package csx55.threads;
 
 import java.nio.file.AtomicMoveNotSupportedException;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ThreadPoolThread implements Runnable {
@@ -14,9 +11,12 @@ public class ThreadPoolThread implements Runnable {
 
     private AtomicBoolean stopped = new AtomicBoolean(false);
 
-    public ThreadPoolThread(String threadName, BlockingQueue queue) {
+    private final CountDownLatch taskCompletionLatch;
+
+    public ThreadPoolThread(String threadName, BlockingQueue queue, CountDownLatch latch) {
         thread.setName(threadName);
         this.taskQueue = queue;
+        this.taskCompletionLatch = latch;
     }
 
     @Override
@@ -25,6 +25,7 @@ public class ThreadPoolThread implements Runnable {
             while (!stopped.get()) {
                 Runnable task = (Runnable) taskQueue.take();
                 task.run();
+                taskCompletionLatch.countDown();
             }
 
             } catch (InterruptedException e) {
@@ -41,5 +42,10 @@ public class ThreadPoolThread implements Runnable {
         return this.stopped;
     }
 
+    public boolean awaitCompletion() throws InterruptedException {
+        taskCompletionLatch.await();
+        System.out.println("All tasks complete");
+        return true; // All tasks have completed
+    }
 
 }

@@ -82,7 +82,7 @@ public class TCPReceiverThread implements Runnable{
                         }
                         else if (domainType == Protocol.TOPOLOGY_INFO) {
                             TopologyInfo info = new TopologyInfo().unmarshal(data);
-                            ((MessagingNode)node).receiveTopologyInfo(info);
+                            ((MessagingNode)node).initThreadCount(info);
                         }
                         else if (domainType == Protocol.LOAD_SUMMARY) {
                             LoadSummaryResponse traffic = new LoadSummaryResponse().unmarshal(data);

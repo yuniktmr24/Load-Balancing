@@ -2,7 +2,7 @@ package csx55.threads;
 
 public class ThreadPoolTest {
     public static void main (String [] args) {
-        ThreadPool pool = new ThreadPool(6, 10);
+        ThreadPool pool = new ThreadPool(6, 10, 11);
         for (int i = 0; i < 6; i++) {
             int taskNo = i;
 

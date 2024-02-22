@@ -16,6 +16,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -27,7 +28,7 @@ public class MessagingNode implements Node{
     private int nodePort;
 
     //threadpool size comes in from registry TODO
-    private final ThreadPool threadPool = new ThreadPool(new Random().nextInt(15) + 2, 1000);
+    private ThreadPool threadPool = null;
 
     private List <String> neighbors = new ArrayList<>();
 
@@ -37,6 +38,9 @@ public class MessagingNode implements Node{
     private Map <String, Integer> loadMap = new ConcurrentHashMap<>();
 
     private StatsEngine stats = new StatsEngine();
+    private int threadCount;
+
+    private CountDownLatch taskGeneratedCounter;
 
     public String getNodeIP() {
         return nodeIP;
@@ -59,7 +63,6 @@ public class MessagingNode implements Node{
     private List <String> balancedNodesLocalCopy = Collections.synchronizedList(new ArrayList<>());
 
 
-
     public static void main(String[] args) throws IOException {
         //try (Socket socketToRegistry = new Socket(args[0], Integer.parseInt(args[1]));
              try (Socket socketToRegistry = new Socket("localhost", 12349);
@@ -74,12 +77,7 @@ public class MessagingNode implements Node{
             Thread messageNodeServerThread = new Thread(new TCPServerThread(node, peerServer));
             messageNodeServerThread.start();
 
-            System.out.println("Thread pool size # " + node.getThreadPoolSize());
-
             node.registerNode(node, socketToRegistry);
-
-            //TODO : might do this when the actual message rounds begin
-            node.generateTasks();
 
             Thread userThread = new Thread(() -> node.userInput(node));
             userThread.start();
@@ -97,9 +95,11 @@ public class MessagingNode implements Node{
         int maxTasks = 1000; //1000;
         int minTasks = 1;
         int numTasks = rand.nextInt(maxTasks - 1) + minTasks;
+        taskGeneratedCounter = new CountDownLatch(numTasks);
         for (int idx = 0; idx < numTasks; idx++) {
             Task task = new Task(nodeIP, nodePort, 1, new Random().nextInt());
             currentTasks.add(task);
+            taskGeneratedCounter.countDown();
         }
         System.out.println("Generated "+ numTasks + " tasks");
         stats.setGeneratedCount(numTasks);
@@ -161,7 +161,7 @@ public class MessagingNode implements Node{
                 //pull tasks; [TODO fix NPE here]
                 TaskList pullTask = new TaskList(difference, nodeIP+":"+nodePort);
                 this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(pullTask.marshal());
-
+                //sleep so that the currentTaskList has time to update
                 TimeUnit.SECONDS.sleep(5);
                 System.out.println("Updated self load after balance substeps = " + selfLoad);
                 currentMaxLoad = currentMaxLoad - difference;
@@ -234,7 +234,29 @@ public class MessagingNode implements Node{
         });
         System.out.println("Load balancing done");
         printCurrentLoadMap();
+        threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
+        submitAndWaitUntilTasksComplete();
+    }
+
+    private void submitAndWaitUntilTasksComplete() {
+        long startTime = System.nanoTime();
         submitTasks();
+        try {
+            boolean taskComplete = threadPool.awaitCompletion();
+            if (taskComplete) {
+                long endTime = System.nanoTime();
+                long executionTime = endTime - startTime;
+                long numSecs = executionTime/1_000_000_000;
+                System.out.println("All tasks completed in "+ numSecs + " secs");
+                System.out.println(stats.getCurrentTasks().get());
+                System.out.println("Task completion rate (per sec) = "+ stats.getCurrentTasks().get()/ numSecs );
+            }
+            else {
+                logger.severe("Some tasks not completed. ERROR");
+            }
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private Optional<Map.Entry<String, Integer>> getMaxLoadEntrySet () {
@@ -264,16 +286,17 @@ public class MessagingNode implements Node{
                 //dummy example
                 //String msg = Thread.currentThread().getName() + " : Task " + taskNo;
                 //System.out.println(msg);
-                System.out.println(Thread.currentThread().getName() + " : Task " + taskNo);
+                //System.out.println(Thread.currentThread().getName() + " : Task " + taskNo);
                 Miner miner = Miner.getInstance();
 
                 Task task = this.currentTasks.get(taskNo);
                 miner.mine(task);
-                System.out.println(task.toString());
+                //System.out.println(task.toString());
 
                 stats.incrementCompletedCount();
             });
         }
+        System.out.println("Done");
     }
 
     public void registerNode (MessagingNode node, Socket socketToRegistry) {
@@ -398,6 +421,9 @@ public class MessagingNode implements Node{
                 else if (userInput.equals(UserCommands.PRINT_NUM_CURRENT_TASKS.getCmd()) || userInput.equals(String.valueOf(UserCommands.PRINT_NUM_CURRENT_TASKS.getCmdId()))) {
                     System.out.println("Number of current tasks : " + stats.getCurrentTasks());
                 }
+                else if (userInput.equals(UserCommands.COUNTDOWN_LATCH_DEBUG.getCmd()) || userInput.equals(String.valueOf(UserCommands.COUNTDOWN_LATCH_DEBUG.getCmdId()))) {
+                    System.out.println("Count down latch : " + threadPool.getTaskCompletionLatch().getCount());
+                }
                 else if (userInput.equals(UserCommands.MANUAL_LOAD_BALANCE.getCmd()) || userInput.equals(String.valueOf(UserCommands.MANUAL_LOAD_BALANCE.getCmdId()))) {
                     Thread loadBalanceThread = new Thread(() -> {
                         try {
@@ -484,10 +510,33 @@ public class MessagingNode implements Node{
         return -1;
     }
 
-    public synchronized void receiveTopologyInfo(TopologyInfo info) {
+    //this is basically our init
+    public synchronized void initThreadCount(TopologyInfo info) {
         System.out.println("Received topology info "+ info);
 
         String[] elements = info.getNodeRingInfo().split("->");
+
+        //first setup threadpool
+        if (threadPool != null) {
+            System.out.println("Cleaning up old thread pool instance");
+            threadPool.stop(); //clean up before starting new threadpool instance
+        }
+        stats.reset();
+        neighbors.clear();
+        this.loadMap.clear();
+        this.balancedNodesLocalCopy.clear();
+        this.currentTasks.clear();
+
+        generateTasks();
+        try {
+            taskGeneratedCounter.await();
+            System.out.println("All tasks generated");
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+
+
+        this.threadCount = info.getNumThreads();
 
         // Add each element to the linked list
         neighbors.addAll(Arrays.asList(elements));
@@ -521,6 +570,7 @@ public class MessagingNode implements Node{
 
         TCPConnection peerConn = this.peerConnections.get(peer);
 
+        System.out.println("Sent "+ stats.toString());
         LoadSummaryResponse load = new LoadSummaryResponse(nodeIP, nodePort, stats);
         try {
             peerConn.getSenderThread().sendData(load.marshal());
@@ -580,7 +630,6 @@ public class MessagingNode implements Node{
         if (taskList.getOperations().equals(TaskOperations.PUSH)) {
             System.out.println("Pulled tasks # " + taskList.getTasks().length);
             for (Task task : taskList.getTasks()) {
-                System.out.println(task.toString());
                 currentTasks.add(task);
                 stats.incrementCurrentTasks();
                 stats.incrementPullCount();
@@ -613,10 +662,16 @@ public class MessagingNode implements Node{
     public synchronized void copyStaticBalancedNodesInfoToLocal(BalancedNodes balanced) {
         this.balancedNodesLocalCopy.addAll(Arrays.asList(BalancedNodes.getBalancedNodes()));
         System.out.println("Updated balanced nodes list in this node.");
+        System.out.println("Origin node balanced. Starting tasks in the destination nodes");
 
         String balanceNodeId = balanced.getBalancedNodeInfo().split("->")[0];
         int balancedNodeLoad = Integer.parseInt(balanced.getBalancedNodeInfo().split("->")[1]);
         this.loadMap.replace(balanceNodeId, balancedNodeLoad);
+
+        //well as per experiments, looks like the network is balanced after lb operation
+        // at the self node , so lets run the tasks in the target nodes.
+        threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
+        submitAndWaitUntilTasksComplete();
 
         printBalancedNodesInfo();
         printCurrentLoadMap();

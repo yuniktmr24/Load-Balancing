@@ -89,7 +89,9 @@ public class Registry implements Node{
                         OverlayNode node = overlayNodeList.get(idx);
                         nodeRing[idx + 1] = node.getNeighbors().get(0).getDescriptor();
                     }
-                    TopologyInfo topologyInfo = new TopologyInfo(String.join("->", nodeRing));
+                    int numThreads = Integer.parseInt(userInput.split(" ")[1]);
+                    TopologyInfo topologyInfo = new TopologyInfo(String.join("->", nodeRing), numThreads);
+                    System.out.println("Num of threads specified by user "+ numThreads);
                     //send the NodeRing payload over the wire
                     for (OverlayNode node: overlayNodes) {
                         node.getConnection().getSenderThread().sendData(topologyInfo.marshal());

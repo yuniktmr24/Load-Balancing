@@ -28,6 +28,8 @@ public enum UserCommands {
 
     PRINT_NUM_CURRENT_TASKS("print-num-current-tasks", 15, Collections.singletonList(NodeType.MESSAGE_NODE)),
 
+    COUNTDOWN_LATCH_DEBUG("cld", 16, Collections.singletonList(NodeType.MESSAGE_NODE)),
+
     EXIT("exit", -1, Arrays.asList(NodeType.REGISTRY, NodeType.MESSAGE_NODE));
     private final String cmd;
     private final int cmdId;

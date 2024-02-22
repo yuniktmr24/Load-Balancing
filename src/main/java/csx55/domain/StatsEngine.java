@@ -42,10 +42,10 @@ public class StatsEngine {
 
     public void reset() {
         this.currentTasks.set(0);
-        this.generatedTasks.set( 0 );
-        this.completedTasks.set( 0 );
-        this.pushedTasks.set( 0 );
-        this.pulledTasks.set( 0 );
+        this.generatedTasks.set(0);
+        this.completedTasks.set(0);
+        this.pushedTasks.set(0);
+        this.pulledTasks.set(0);
     }
 
     @Override
@@ -90,4 +90,6 @@ public class StatsEngine {
     public void decrementCurrentTasks () {
         this.currentTasks.getAndDecrement();
     }
+
+
 }

@@ -7,8 +7,11 @@ public class TopologyInfo {
 
     private String nodeRingInfo; //csv
 
-    public TopologyInfo(String nodeRingInfo) {
+    private int numThreads;
+
+    public TopologyInfo(String nodeRingInfo, int numThreads) {
         this.nodeRingInfo = nodeRingInfo;
+        this.numThreads = numThreads;
     }
 
     public TopologyInfo() {
@@ -23,6 +26,7 @@ public class TopologyInfo {
         int infoLength = infoBytes.length;
         dout.writeInt(infoLength);
         dout.write(infoBytes);
+        dout.writeInt(numThreads);
         dout.flush();
 
         byte[] marshalledBytes = byteArrayOutputStream.toByteArray();
@@ -41,10 +45,11 @@ public class TopologyInfo {
             byte[] infoBytes = new byte[infoLength];
             din.readFully(infoBytes);
             String nodeInfo = new String(infoBytes);
+            int numThreads = din.readInt();
             byteArrayInputStream.close();
             din.close();
 
-            return new TopologyInfo(nodeInfo);
+            return new TopologyInfo(nodeInfo, numThreads);
         }
         return null;
     }
@@ -57,5 +62,13 @@ public class TopologyInfo {
 
     public String getNodeRingInfo() {
         return nodeRingInfo;
+    }
+
+    public int getNumThreads() {
+        return numThreads;
+    }
+
+    public void setNumThreads(int numThreads) {
+        this.numThreads = numThreads;
     }
 }
