@@ -34,6 +34,10 @@ public class StatsEngine {
         this.completedTasks.getAndIncrement();
     }
 
+    public void incrementGeneratedCount() {
+        this.generatedTasks.getAndIncrement();
+    }
+
     public void setGeneratedCount(int val) {
         this.generatedTasks.set(val);
     }

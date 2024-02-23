@@ -58,10 +58,10 @@ public class TCPReceiverThread implements Runnable{
                             ClientConnection conn = new ClientConnection().unmarshal(data);
                             ((Registry) node).handleClient(messageSource, conn, connection);
                         }
-//                        else if (domainType == 4) {
-//                            TaskComplete complete = new TaskComplete().unmarshal(data);
-//                            ((Registry) node).handleCompletedTask();
-//                        }
+                        else if (domainType == Protocol.TASK_COMPLETE) {
+                            TaskCompleteResponse complete = new TaskCompleteResponse().unmarshal(data);
+                            ((Registry) node).recordCompletedTaskFromMessagingNode(complete);
+                        }
 //                        else if (domainType == 6) {
 //                            TrafficSummaryResponse traffic = new TrafficSummaryResponse().unmarshal(data);
 //                            ((Registry) node).handleTrafficSummaryResponse(traffic);
@@ -123,6 +123,7 @@ public class TCPReceiverThread implements Runnable{
 
                 }
             } catch (Exception e) {
+                System.out.println("Error in node "+ node.toString());
                 this.close();
                 e.printStackTrace();
             }

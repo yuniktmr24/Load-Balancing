@@ -42,6 +42,8 @@ public class MessagingNode implements Node{
 
     private CountDownLatch taskGeneratedCounter;
 
+    private CountDownLatch loadStatisticsMessageAroundRingCounter;
+
     public String getNodeIP() {
         return nodeIP;
     }
@@ -62,10 +64,15 @@ public class MessagingNode implements Node{
 
     private List <String> balancedNodesLocalCopy = Collections.synchronizedList(new ArrayList<>());
 
+    private int taskRounds;
+
+    private boolean loadBalanceOriginTokenReceived = false;
+
+    private CountDownLatch pullCounter;
 
     public static void main(String[] args) throws IOException {
         //try (Socket socketToRegistry = new Socket(args[0], Integer.parseInt(args[1]));
-             try (Socket socketToRegistry = new Socket("localhost", 12349);
+             try (Socket socketToRegistry = new Socket("localhost", 12348);
              ServerSocket peerServer = new ServerSocket(0);
         ) {
             System.out.println("Connecting to server...");
@@ -106,136 +113,164 @@ public class MessagingNode implements Node{
         stats.setCurrentTasks(numTasks);
         int selfLoad = stats.getCurrentTasks().get();
         this.loadMap.put(this.nodeIP+":"+this.nodePort, selfLoad);
-    }
-
-    private void loadBalance() throws IOException, InterruptedException {
-        //lets add the current nodes load to the loadMap which has peer loads
-        System.out.println("Starting load balancing");
-        int selfLoad = stats.getCurrentTasks().get();
-//        this.loadMap.put(this.nodeIP+":"+this.nodePort, selfLoad);
-
-        //exclude balanced nodes from compute
-        Optional<Map.Entry<String, Integer>> entryWithMaxValue = getMaxLoadEntrySet();
-        Optional<Map.Entry<String, Integer>> entryWithMinValue = getMinLoadEntrySet();
-
-        Map.Entry<String, Integer> maxEntry = entryWithMaxValue.get();
-        int maxLoadInNetwork = maxEntry.getValue();
-        String nodeWithMaxLoad = maxEntry.getKey();
-
-        Map.Entry<String, Integer> minEntry = entryWithMinValue.get();
-        int minLoadInNetwork = minEntry.getValue();
-        String nodeWithMinLoad = minEntry.getKey();
-
-        //this means there is only one unbalanced node, (which is self). So, we terminate
-        //as other nodes have already attained equilibrium.
-        if (nodeWithMaxLoad.equals(nodeWithMinLoad)) {
-            System.out.println("All other nodes balanced. So no other node available for" +
-                    " further balance ops. So terminating");
-            printCurrentLoadMap();
-            //TODO: maybe send registry a message saying load balance done
-            return;
-        }
-
-        //target load for convergence operations
-        int targetLoadInNetwork = (int) Math.floor(this.loadMap.values().stream()
-                .mapToInt(Integer::intValue)
-                .average()
-                .orElseThrow());
-
-        int currentAverage = targetLoadInNetwork;
-        int currentMaxLoad;
-        int currentMinLoad;
-
-        System.out.println("Global target load size after balance "+ targetLoadInNetwork);
-        System.out.println("Initial load size in this node "+ selfLoad);
-        while (selfLoad != targetLoadInNetwork) {
-            if (selfLoad < targetLoadInNetwork) {
-                Optional<Map.Entry<String, Integer>> entryWithMaxValueTemp = getMaxLoadEntrySet();
-                Map.Entry<String, Integer> maxEntryTemp = entryWithMaxValueTemp.get();
-                currentMaxLoad = maxEntryTemp.getValue();
-                nodeWithMaxLoad = maxEntryTemp.getKey();
-
-                currentAverage = (currentMaxLoad + selfLoad) / 2;
-                int difference = Math.abs(currentAverage - selfLoad);
-                selfLoad = selfLoad + difference;
-                //pull tasks; [TODO fix NPE here]
-                TaskList pullTask = new TaskList(difference, nodeIP+":"+nodePort);
-                this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(pullTask.marshal());
-                //sleep so that the currentTaskList has time to update
-                TimeUnit.SECONDS.sleep(5);
-                System.out.println("Updated self load after balance substeps = " + selfLoad);
-                currentMaxLoad = currentMaxLoad - difference;
-
-                //update own load map with intermediate values
-                this.loadMap.put(nodeWithMaxLoad, currentMaxLoad);
-                this.loadMap.put(nodeIP+":"+nodePort, selfLoad);
-                //TODO: ALso need to send/receive tasks over the wire
-                //propagate this change to the maxLoad keynode
-                ServerResponse res = new ServerResponse(RequestType.LOAD_UPDATE, StatusCode.SUCCESS, nodeWithMaxLoad + "->" + String.valueOf(currentMaxLoad));
-                //send task to only specific node, but inform all other nodes about the update todo
-                this.peerConnections.forEach((k, v) -> {
-                    try {
-                        v.getSenderThread().sendData(res.marshal());
-                    } catch (InterruptedException | IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-                //this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(res.marshal());
-            }
-            else {
-                Optional<Map.Entry<String, Integer>> entryWithMinValueTemp = getMinLoadEntrySet();
-                Map.Entry<String, Integer> minEntryTemp = entryWithMinValueTemp.get();
-                currentMinLoad = minEntryTemp.getValue();
-                nodeWithMinLoad = minEntryTemp.getKey();
-
-                currentAverage = (currentMinLoad + selfLoad) / 2;
-                int difference = Math.abs(selfLoad - currentAverage);
-                selfLoad = selfLoad - difference;
-                //TODO L fix npe
-                pushNTasks(difference, nodeWithMinLoad);
-                System.out.println("Updated self load after balance substeps = " + selfLoad);
-                currentMinLoad = currentMinLoad + difference;
-                //update own load map with intermediate values
-                this.loadMap.put(nodeWithMinLoad, currentMinLoad);
-                this.loadMap.put(nodeIP+":"+nodePort, selfLoad);
-                //propagate this change to the maxLoad keynode
-                ServerResponse res = new ServerResponse(RequestType.LOAD_UPDATE, StatusCode.SUCCESS, nodeWithMinLoad + "->"+ String.valueOf(currentMinLoad));
-                this.peerConnections.forEach((k, v) -> {
-                    try {
-                        v.getSenderThread().sendData(res.marshal());
-                    } catch (InterruptedException | IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-                //this.peerConnections.get(nodeWithMinLoad).getSenderThread().sendData(res.marshal());
-            }
-        }
-        //this node has balanced load. we're done here. broadcast that this
-        //node is balanced and should not be factored into load balancing
-        //TODO
-        System.out.println("Final self load after balance completed = " + selfLoad);
-        this.loadMap.replace(nodeIP+":"+nodePort, selfLoad);
-
-        balancedNodesLocalCopy.add(this.nodeIP+":"+this.nodePort);
-
-        //inform peers about balanced node update as well
-        BalancedNodes staticBalancerInfo = new BalancedNodes();
-        staticBalancerInfo.setBalancedNodeInfo(this.nodeIP+":"+this.nodePort+"->"+selfLoad);
-        BalancedNodes.addBalancedNode(this.nodeIP+":"+this.nodePort);
-
-        //create balanced node message payload TODO
-        //send balanced node message to all peers
-        peerConnections.forEach((k, v) -> {
+        //fresh set of tasks. fresh loads.
+        //TODO: peer loads. Replace with message rounds going aroundf the ring
+        System.out.println("Latch od ize "+ this.neighbors.size());
+        loadStatisticsMessageAroundRingCounter = new CountDownLatch(this.neighbors.size());
+        for (String peer: neighbors) {
+            String peerIp = peer.split(":")[0].trim();
+            int peerPort = Integer.parseInt(peer.split(":")[1].trim());
             try {
-                v.getSenderThread().sendData(staticBalancerInfo.marshal());
-            } catch (InterruptedException | IOException e) {
+                Socket peerSocket = new Socket(peerIp, peerPort);
+                TCPConnection connection = new TCPConnection(this, peerSocket);
+                peerConnections.put(peer, connection);
+
+                ClientConnection conn = new ClientConnection(this.getNodeIP(), RequestType.REQUEST_TOTAL_TASK_INFO, this.getNodePort());
+                connection.getSenderThread().sendData(conn.marshal());
+                connection.startConnection();
+
+            } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
-        });
-        System.out.println("Load balancing done");
-        printCurrentLoadMap();
-        threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
-        submitAndWaitUntilTasksComplete();
+        }
+    }
+
+    private void loadBalanceInitThreadPoolAndSubmitTasks() throws IOException, InterruptedException {
+        if (loadBalanceOriginTokenReceived) {
+            //lets add the current nodes load to the loadMap which has peer loads
+            System.out.println("Starting load balancing");
+            int selfLoad = stats.getCurrentTasks().get();
+//        this.loadMap.put(this.nodeIP+":"+this.nodePort, selfLoad);
+
+            //exclude balanced nodes from compute
+            Optional<Map.Entry<String, Integer>> entryWithMaxValue = getMaxLoadEntrySet();
+            Optional<Map.Entry<String, Integer>> entryWithMinValue = getMinLoadEntrySet();
+
+            Map.Entry<String, Integer> maxEntry = entryWithMaxValue.get();
+            int maxLoadInNetwork = maxEntry.getValue();
+            String nodeWithMaxLoad = maxEntry.getKey();
+
+            Map.Entry<String, Integer> minEntry = entryWithMinValue.get();
+            int minLoadInNetwork = minEntry.getValue();
+            String nodeWithMinLoad = minEntry.getKey();
+
+            //this means there is only one unbalanced node, (which is self). So, we terminate
+            //as other nodes have already attained equilibrium.
+            //but wait
+            if (nodeWithMaxLoad.equals(nodeWithMinLoad)) {
+                System.out.println("All other nodes balanced. So no other node available for" +
+                        " further balance ops. So terminating");
+                printCurrentLoadMap();
+                //TODO: maybe send registry a message saying load balance done
+                return;
+            }
+
+            //target load for convergence operations
+            int targetLoadInNetwork = (int) Math.floor(this.loadMap.values().stream()
+                    .mapToInt(Integer::intValue)
+                    .average()
+                    .orElseThrow());
+
+            int currentAverage = targetLoadInNetwork;
+            int currentMaxLoad;
+            int currentMinLoad;
+
+            System.out.println("Global target load size after balance " + targetLoadInNetwork);
+            System.out.println("Initial load size in this node " + selfLoad);
+            while (selfLoad != targetLoadInNetwork) {
+                if (selfLoad < targetLoadInNetwork) {
+                    Optional<Map.Entry<String, Integer>> entryWithMaxValueTemp = getMaxLoadEntrySet();
+                    Map.Entry<String, Integer> maxEntryTemp = entryWithMaxValueTemp.get();
+                    currentMaxLoad = maxEntryTemp.getValue();
+                    nodeWithMaxLoad = maxEntryTemp.getKey();
+
+                    currentAverage = (currentMaxLoad + selfLoad) / 2;
+                    int difference = Math.abs(currentAverage - selfLoad);
+                    selfLoad = selfLoad + difference;
+                    //pull tasks; [TODO fix NPE here]
+                    TaskList pullTask = new TaskList(difference, nodeIP + ":" + nodePort);
+                    this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(pullTask.marshal());
+                    //sleep so that the currentTaskList has time to update //or create a latch TODO
+                    pullCounter = new CountDownLatch(difference);
+                    pullCounter.await();
+
+                    //TimeUnit.SECONDS.sleep(10);
+                    System.out.println("Updated self load after balance substeps = " + selfLoad);
+                    currentMaxLoad = currentMaxLoad - difference;
+
+                    //update own load map with intermediate values
+                    this.loadMap.put(nodeWithMaxLoad, currentMaxLoad);
+                    this.loadMap.put(nodeIP + ":" + nodePort, selfLoad);
+                    //TODO: ALso need to send/receive tasks over the wire
+                    //propagate this change to the maxLoad keynode
+                    ServerResponse res = new ServerResponse(RequestType.LOAD_UPDATE, StatusCode.SUCCESS, nodeWithMaxLoad + "->" + String.valueOf(currentMaxLoad));
+                    //send task to only specific node, but inform all other nodes about the update todo
+                    this.peerConnections.forEach((k, v) -> {
+                        try {
+                            v.getSenderThread().sendData(res.marshal());
+                        } catch (InterruptedException | IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+                    //this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(res.marshal());
+                } else {
+                    Optional<Map.Entry<String, Integer>> entryWithMinValueTemp = getMinLoadEntrySet();
+                    Map.Entry<String, Integer> minEntryTemp = entryWithMinValueTemp.get();
+                    currentMinLoad = minEntryTemp.getValue();
+                    nodeWithMinLoad = minEntryTemp.getKey();
+
+                    currentAverage = (currentMinLoad + selfLoad) / 2;
+                    int difference = Math.abs(selfLoad - currentAverage);
+                    selfLoad = selfLoad - difference;
+                    //TODO L fix npe
+                    pushNTasks(difference, nodeWithMinLoad);
+                    System.out.println("Updated self load after balance substeps = " + selfLoad);
+                    currentMinLoad = currentMinLoad + difference;
+                    //update own load map with intermediate values
+                    this.loadMap.put(nodeWithMinLoad, currentMinLoad);
+                    this.loadMap.put(nodeIP + ":" + nodePort, selfLoad);
+                    //propagate this change to the maxLoad keynode
+                    ServerResponse res = new ServerResponse(RequestType.LOAD_UPDATE, StatusCode.SUCCESS, nodeWithMinLoad + "->" + String.valueOf(currentMinLoad));
+                    this.peerConnections.forEach((k, v) -> {
+                        try {
+                            v.getSenderThread().sendData(res.marshal());
+                        } catch (InterruptedException | IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+                    //this.peerConnections.get(nodeWithMinLoad).getSenderThread().sendData(res.marshal());
+                }
+            }
+            //this node has balanced load. we're done here. broadcast that this
+            //node is balanced and should not be factored into load balancing
+            //TODO
+            System.out.println("Final self load after balance completed = " + selfLoad);
+            this.loadMap.replace(nodeIP + ":" + nodePort, selfLoad);
+
+            balancedNodesLocalCopy.add(this.nodeIP + ":" + this.nodePort);
+
+            //inform peers about balanced node update as well
+            BalancedNodes staticBalancerInfo = new BalancedNodes();
+            staticBalancerInfo.setBalancedNodeInfo(this.nodeIP + ":" + this.nodePort + "->" + selfLoad);
+            BalancedNodes.addBalancedNode(this.nodeIP + ":" + this.nodePort);
+
+            //create balanced node message payload TODO
+            //send balanced node message to all peers
+            peerConnections.forEach((k, v) -> {
+                try {
+                    v.getSenderThread().sendData(staticBalancerInfo.marshal());
+                } catch (InterruptedException | IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            System.out.println("Load balancing done");
+            printCurrentLoadMap();
+            threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
+            submitAndWaitUntilTasksComplete();
+        }
+        else {
+            System.out.println("Need load balancer token to start");
+        }
     }
 
     private void submitAndWaitUntilTasksComplete() {
@@ -244,17 +279,25 @@ public class MessagingNode implements Node{
         try {
             boolean taskComplete = threadPool.awaitCompletion();
             if (taskComplete) {
+                //well one round is complete
                 long endTime = System.nanoTime();
                 long executionTime = endTime - startTime;
                 long numSecs = executionTime/1_000_000_000;
                 System.out.println("All tasks completed in "+ numSecs + " secs");
                 System.out.println(stats.getCurrentTasks().get());
                 System.out.println("Task completion rate (per sec) = "+ stats.getCurrentTasks().get()/ numSecs );
+                //inform registry about task completion
+
+                TaskCompleteResponse resp = new TaskCompleteResponse(nodeIP, nodePort, stats);
+                this.registryConnection.getSenderThread().sendData(resp.marshal());
+
+               // generateNewRoundOfTasks();
+                System.out.println("New round of tasks being generated");
             }
             else {
                 logger.severe("Some tasks not completed. ERROR");
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException | IOException e) {
             throw new RuntimeException(e);
         }
     }
@@ -427,7 +470,8 @@ public class MessagingNode implements Node{
                 else if (userInput.equals(UserCommands.MANUAL_LOAD_BALANCE.getCmd()) || userInput.equals(String.valueOf(UserCommands.MANUAL_LOAD_BALANCE.getCmdId()))) {
                     Thread loadBalanceThread = new Thread(() -> {
                         try {
-                            node.loadBalance();
+                            loadBalanceOriginTokenReceived = true;
+                            node.loadBalanceInitThreadPoolAndSubmitTasks();
                         } catch (IOException | InterruptedException e) {
                             throw new RuntimeException(e);
                         }
@@ -488,6 +532,18 @@ public class MessagingNode implements Node{
             this.loadMap.replace(updatedLoadInfo[0], Integer.parseInt(updatedLoadInfo[1]));
             printCurrentLoadMap();
         }
+        else if (res.getRequestType() != null && res.getRequestType().equals(RequestType.MESSAGE_ROUND_INITIATE)) {
+            //start the load balance and the task rounds after lb
+            if (res.getAdditionalInfo().contains("TOKEN")) {
+                loadBalanceOriginTokenReceived = true;
+            }
+//            startNewRoundOfTasks();
+            try {
+                loadBalanceInitThreadPoolAndSubmitTasks();
+            } catch (IOException | InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     public int getThreadPoolSize () {
@@ -523,19 +579,6 @@ public class MessagingNode implements Node{
         }
         stats.reset();
         neighbors.clear();
-        this.loadMap.clear();
-        this.balancedNodesLocalCopy.clear();
-        this.currentTasks.clear();
-
-        generateTasks();
-        try {
-            taskGeneratedCounter.await();
-            System.out.println("All tasks generated");
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-
-
         this.threadCount = info.getNumThreads();
 
         // Add each element to the linked list
@@ -546,21 +589,33 @@ public class MessagingNode implements Node{
         //TODO: after this, we ping each element in the ring and get total tasks
         System.out.println("The list of neighbors : "+ neighbors);
 
-        for (String peer: neighbors) {
-            String peerIp = peer.split(":")[0].trim();
-            int peerPort = Integer.parseInt(peer.split(":")[1].trim());
-            try {
-                Socket peerSocket = new Socket(peerIp, peerPort);
-               TCPConnection connection = new TCPConnection(this, peerSocket);
-               peerConnections.put(peer, connection);
+        //initial round of tasks
+        generateNewRoundOfTasks();
+    }
 
-               ClientConnection conn = new ClientConnection(this.getNodeIP(), RequestType.REQUEST_TOTAL_TASK_INFO, this.getNodePort());
-               connection.getSenderThread().sendData(conn.marshal());
-               connection.startConnection();
+    private synchronized void startNewRoundOfTasks () {
+        generateNewRoundOfTasks();
+        try {
+            //loadStatisticsMessageAroundRingCounter.await(); //wait for total loads across the network to be collected before load balancing
+            taskGeneratedCounter.await();
+            //new thread TODO
+            loadBalanceInitThreadPoolAndSubmitTasks();
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
-            } catch (IOException | InterruptedException e) {
-                throw new RuntimeException(e);
-            }
+    private synchronized void generateNewRoundOfTasks () {
+        this.loadMap.clear();
+        this.balancedNodesLocalCopy.clear();
+        this.currentTasks.clear();
+
+        generateTasks();
+        try {
+            taskGeneratedCounter.await();
+            System.out.println("All tasks generated");
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -582,12 +637,22 @@ public class MessagingNode implements Node{
     //record task load info that peer sent as result of the sendTaskInfo function
     public synchronized void handleLoadSummaryResponse(LoadSummaryResponse traffic) {
         //loadMap.clear();
-        if (loadMap.containsKey(traffic.getNodeIP()+":"+traffic.getNodePort())) {
-            loadMap.replace(traffic.getNodeIP()+":"+traffic.getNodePort(), traffic.getCurrentTasks());
-        }
-        else {
+        if (loadMap.containsKey(traffic.getNodeIP() + ":" + traffic.getNodePort())) {
+            loadMap.replace(traffic.getNodeIP() + ":" + traffic.getNodePort(), traffic.getCurrentTasks());
+        } else {
             loadMap.put(traffic.getNodeIP() + ":" + traffic.getNodePort(), traffic.getCurrentTasks());
         }
+        System.out.println("Received load summary from neighbor ");
+        loadStatisticsMessageAroundRingCounter.countDown();
+//        System.out.println("New load statistics latch val " + loadStatisticsMessageAroundRingCounter.getCount());
+//        printCurrentLoadMap();
+//        if (loadStatisticsMessageAroundRingCounter.getCount() == 0 && this.loadBalanceOriginTokenReceived) {
+//            try {
+//                loadBalanceInitThreadPoolAndSubmitTasks();
+//            } catch (IOException | InterruptedException e) {
+//                throw new RuntimeException(e);
+//            }
+//        }
 
     }
 
@@ -626,19 +691,31 @@ public class MessagingNode implements Node{
     //remember this is happening in receiver node. Not sender node. So the operations enum
     //reflect the original command in the sender. For pull in receiver, the sender will
     //have a push operation, which is what the payload will have
-    public synchronized void handleTaskMigrations(TaskList taskList) {
-        if (taskList.getOperations().equals(TaskOperations.PUSH)) {
-            System.out.println("Pulled tasks # " + taskList.getTasks().length);
-            for (Task task : taskList.getTasks()) {
-                currentTasks.add(task);
-                stats.incrementCurrentTasks();
-                stats.incrementPullCount();
+    //don't sync this. else deadlock arises because the first thread will need the pull counter latch to update
+    //to proceed, but in order to update the latch this method needs to be executed. However, the first
+    //thread hasn't released the lock on this, but is waiting for this method to return, which will not happen
+    //DEADLOCK!!!!!!! If sync'ed
+    //WARNING: DONT SYNC THIS. REMEMBER THE TORTURE
+    public void handleTaskMigrations(TaskList taskList) {
+        System.out.println("Hanlding task migration");
+        Thread migrationThread = new Thread(() -> {
+            if (taskList.getOperations().equals(TaskOperations.PUSH)) {
+                System.out.println("Pulled tasks # " + taskList.getTasks().length);
+                for (Task task : taskList.getTasks()) {
+                    currentTasks.add(task);
+                    stats.incrementCurrentTasks();
+                    stats.incrementPullCount();
+                    if (pullCounter != null) {
+                        pullCounter.countDown();
+                    }
+                }
             }
-        }
-        //pull
-        else {
-            pushNTasks(taskList.getRequestedTaskNum(), taskList.getRequestingNode());
-        }
+            //pull
+            else {
+                pushNTasks(taskList.getRequestedTaskNum(), taskList.getRequestingNode());
+            }
+        });
+        migrationThread.start();
         //printCurrentTasks("(After bulk pull)");
     }
 
@@ -670,6 +747,7 @@ public class MessagingNode implements Node{
 
         //well as per experiments, looks like the network is balanced after lb operation
         // at the self node , so lets run the tasks in the target nodes.
+        //not the node with balance token
         threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
         submitAndWaitUntilTasksComplete();
 

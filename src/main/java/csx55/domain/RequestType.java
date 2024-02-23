@@ -12,5 +12,7 @@ public enum RequestType {
 
     PULL_TRAFFIC_SUMMARY,
 
-    LOAD_UPDATE
+    LOAD_UPDATE,
+
+    MESSAGE_ROUND_INITIATE
 }

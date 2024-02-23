@@ -14,5 +14,9 @@ public interface Protocol {
     final int TASK = 6;
 
     final int TASK_LIST = 7;
-    int BALANCED_NODES = 8;
+    final int BALANCED_NODES = 8;
+
+    final int TASK_COMPLETE = 9;
+
+
 }

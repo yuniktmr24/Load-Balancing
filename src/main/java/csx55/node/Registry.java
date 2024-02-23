@@ -13,6 +13,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -32,19 +33,21 @@ public class Registry implements Node{
 
     private static TCPServerThread registryServerThread;
 
+    private CountDownLatch singleRoundTaskCompleteCounter;
+
     public static void main (String[] args) {
-        int registryPort = args.length >= 1 ? Integer.parseInt(args[0]) : 12349;
+        int registryPort = args.length >= 1 ? Integer.parseInt(args[0]) : 12348;
         try (ServerSocket serverSocket = new ServerSocket(registryPort)) {
             System.out.println("Server listening on port " + registryPort + "...");
             Registry registry = Registry.getInstance();
             (new Thread(registryServerThread = new TCPServerThread(registry, serverSocket))).start();
-            startUserInputThread(serverSocket);
+            registry.startUserInputThread(serverSocket);
         } catch (IOException e) {
             logger.severe("Error in the serverSocket communication channel" + e);
         }
     }
 
-    private static void startUserInputThread(ServerSocket socket) {
+    private void startUserInputThread(ServerSocket socket) {
         BufferedReader userInputReader = new BufferedReader(new InputStreamReader(System.in));
         try {
             while (true) {
@@ -99,13 +102,22 @@ public class Registry implements Node{
                     logger.info("Ring created with # of nodes : "+ overlayNodes.size());
                 }
 
-//                else if (containsSpace && validStartMessagingCmd) {
-//                    collatedTrafficStats = new CollatedTrafficStats();
-//                    int rounds = Integer.parseInt(userInput.split(" ")[1]);
-//                    System.out.println("Sending "+ rounds + " round of messages");
-//                    instance.sendMessages(rounds);
-//
-//                }
+                else if (containsSpace && validStartMessagingCmd) {
+                    singleRoundTaskCompleteCounter = new CountDownLatch(overlayNodes.size());
+                    //collatedTrafficStats = new CollatedTrafficStats();
+                    int rounds = Integer.parseInt(userInput.split(" ")[1]);
+                    System.out.println("Sending "+ rounds + " round of messages");
+                    //TODO loop this
+                    ServerResponse res = new ServerResponse(RequestType.MESSAGE_ROUND_INITIATE, StatusCode.SUCCESS, "TOKEN_BALANCE_RECEIVER");
+                    //only send to node with token (source Node for load balancing)
+                    Random randomNodeForBalanceStart = new Random();
+                    List <OverlayNode> overlayNodeList = new ArrayList<>(overlayNodes);
+                    OverlayNode tokenBearer = overlayNodeList.get(randomNodeForBalanceStart.nextInt(overlayNodes.size() - 1));
+                    System.out.println("Token bearer node "+ tokenBearer.getDescriptor());
+                    tokenBearer.getConnection().getSenderThread().sendData(res.marshal());
+                    singleRoundTaskCompleteCounter.await();
+                    System.out.println("All tasks completed for given round");
+                }
             }
         } catch (Exception e) {
             logger.severe("Error encountered while running user command "+ e);
@@ -116,6 +128,15 @@ public class Registry implements Node{
                 throw new RuntimeException(ex);
             }
         }
+    }
+
+    public synchronized void recordCompletedTaskFromMessagingNode(TaskCompleteResponse complete) {
+        System.out.println("Received completed tasks stats from " + complete.getNodeIP()+":"+complete.getNodePort());
+        System.out.println(complete.toString());
+        if (singleRoundTaskCompleteCounter != null) {
+            singleRoundTaskCompleteCounter.countDown();
+        }
+        //decrement the number of messaging nodes yet to return result for given round
     }
 
     public synchronized void handleClient(Socket clientSocket, ClientConnection conn, TCPConnection connection) {
