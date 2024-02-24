@@ -36,7 +36,7 @@ public class Registry implements Node{
     private CountDownLatch singleRoundTaskCompleteCounter;
 
     public static void main (String[] args) {
-        int registryPort = args.length >= 1 ? Integer.parseInt(args[0]) : 12348;
+        int registryPort = args.length >= 1 ? Integer.parseInt(args[0]) : 12341;
         try (ServerSocket serverSocket = new ServerSocket(registryPort)) {
             System.out.println("Server listening on port " + registryPort + "...");
             Registry registry = Registry.getInstance();
@@ -108,15 +108,29 @@ public class Registry implements Node{
                     int rounds = Integer.parseInt(userInput.split(" ")[1]);
                     System.out.println("Sending "+ rounds + " round of messages");
                     //TODO loop this
-                    ServerResponse res = new ServerResponse(RequestType.MESSAGE_ROUND_INITIATE, StatusCode.SUCCESS, "TOKEN_BALANCE_RECEIVER");
-                    //only send to node with token (source Node for load balancing)
-                    Random randomNodeForBalanceStart = new Random();
-                    List <OverlayNode> overlayNodeList = new ArrayList<>(overlayNodes);
-                    OverlayNode tokenBearer = overlayNodeList.get(randomNodeForBalanceStart.nextInt(overlayNodes.size() - 1));
-                    System.out.println("Token bearer node "+ tokenBearer.getDescriptor());
-                    tokenBearer.getConnection().getSenderThread().sendData(res.marshal());
-                    singleRoundTaskCompleteCounter.await();
-                    System.out.println("All tasks completed for given round");
+                    for (int i = 0; i < rounds; i++) {
+                        ServerResponse res = new ServerResponse(RequestType.MESSAGE_ROUND_INITIATE, StatusCode.SUCCESS, "TOKEN_BALANCE_RECEIVER");
+                        //only send to node with token (source Node for load balancing)
+                        Random randomNodeForBalanceStart = new Random();
+                        List<OverlayNode> overlayNodeList = new ArrayList<>(overlayNodes);
+                        int sourceNode = randomNodeForBalanceStart.nextInt(overlayNodes.size() - 1);
+                        OverlayNode tokenBearer = overlayNodeList.get(sourceNode);
+                        System.out.println("Token bearer node " + tokenBearer.getDescriptor());
+                        tokenBearer.getConnection().getSenderThread().sendData(res.marshal());
+                        //also the other needs to geneerate rando, number of tasks
+                        int idx = 0;
+                        for (OverlayNode node: overlayNodeList) {
+                            ServerResponse res2 = new ServerResponse(RequestType.MESSAGE_ROUND_INITIATE, StatusCode.SUCCESS, "");
+                            if (idx == sourceNode) {
+                                node.getConnection().getSenderThread().sendData(res2.marshal());
+                            }
+                            idx++;
+                        }
+                        singleRoundTaskCompleteCounter.await();
+                        System.out.println("All tasks completed for given round");
+                        //reinit the latch for next round of msg
+                        singleRoundTaskCompleteCounter = new CountDownLatch(overlayNodes.size());
+                    }
                 }
             }
         } catch (Exception e) {

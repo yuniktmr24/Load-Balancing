@@ -72,7 +72,7 @@ public class MessagingNode implements Node{
 
     public static void main(String[] args) throws IOException {
         //try (Socket socketToRegistry = new Socket(args[0], Integer.parseInt(args[1]));
-             try (Socket socketToRegistry = new Socket("localhost", 12348);
+             try (Socket socketToRegistry = new Socket("localhost", 12341);
              ServerSocket peerServer = new ServerSocket(0);
         ) {
             System.out.println("Connecting to server...");
@@ -108,6 +108,11 @@ public class MessagingNode implements Node{
             currentTasks.add(task);
             taskGeneratedCounter.countDown();
         }
+        try {
+            taskGeneratedCounter.await();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
         System.out.println("Generated "+ numTasks + " tasks");
         stats.setGeneratedCount(numTasks);
         stats.setCurrentTasks(numTasks);
@@ -137,6 +142,9 @@ public class MessagingNode implements Node{
 
     private void loadBalanceInitThreadPoolAndSubmitTasks() throws IOException, InterruptedException {
         if (loadBalanceOriginTokenReceived) {
+            logger.info("Waiting for latch release. current elements in peer map : "+ this.loadMap.keySet() + " latch size : "+ loadStatisticsMessageAroundRingCounter.getCount());
+            loadStatisticsMessageAroundRingCounter.await();
+            logger.info("Latch released : loadmap SIZE "+ this.loadMap.size());
             //lets add the current nodes load to the loadMap which has peer loads
             System.out.println("Starting load balancing");
             int selfLoad = stats.getCurrentTasks().get();
@@ -285,13 +293,19 @@ public class MessagingNode implements Node{
                 long numSecs = executionTime/1_000_000_000;
                 System.out.println("All tasks completed in "+ numSecs + " secs");
                 System.out.println(stats.getCurrentTasks().get());
-                System.out.println("Task completion rate (per sec) = "+ stats.getCurrentTasks().get()/ numSecs );
+                stats.setCompletedTasks(stats.getCurrentTasks().get());
+                if (numSecs != 0) {
+                    System.out.println("Task completion rate (per sec) = " + stats.getCurrentTasks().get() / numSecs);
+                }
                 //inform registry about task completion
 
                 TaskCompleteResponse resp = new TaskCompleteResponse(nodeIP, nodePort, stats);
                 this.registryConnection.getSenderThread().sendData(resp.marshal());
 
-               // generateNewRoundOfTasks();
+                this.loadBalanceOriginTokenReceived = false; //reset token for new round
+                //stats.reset();
+                System.out.println("Stats at end of round "+ stats.toString());
+                //generateNewRoundOfTasks();
                 System.out.println("New round of tasks being generated");
             }
             else {
@@ -336,7 +350,7 @@ public class MessagingNode implements Node{
                 miner.mine(task);
                 //System.out.println(task.toString());
 
-                stats.incrementCompletedCount();
+                //stats.incrementCompletedCount();
             });
         }
         System.out.println("Done");
@@ -510,19 +524,19 @@ public class MessagingNode implements Node{
     }
 
     public synchronized void receiveServerData(ServerResponse res) {
-        System.out.println("****** New Message round from Registry server ******");
         if (res.getRequestType() != null && res.getRequestType().equals(RequestType.REGISTER)) {
-            System.out.println(res.getAdditionalInfo());
+            logger.info(res.getAdditionalInfo());
         }
         else if (res.getRequestType() != null && res.getRequestType().equals(RequestType.DEREGISTER)) {
             try {
-                System.out.println(res.getAdditionalInfo());
+                logger.info(res.getAdditionalInfo());
                 this.registryConnection.closeConnection();
             } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
         }
         else if (res.getRequestType() != null && res.getRequestType().equals(RequestType.LOAD_UPDATE)) {
+            logger.info("****** New comms from Peer server ******");
             //TODO TOPLAN: Might need to implement the token based approach. Say node x modifies the load count
             //for this node, but if this node already did its compute with the old value, then we have a problem
             System.out.println("Old load map");
@@ -533,16 +547,17 @@ public class MessagingNode implements Node{
             printCurrentLoadMap();
         }
         else if (res.getRequestType() != null && res.getRequestType().equals(RequestType.MESSAGE_ROUND_INITIATE)) {
+            logger.info("****** New Message round instruction received from  server ******");
             //start the load balance and the task rounds after lb
             if (res.getAdditionalInfo().contains("TOKEN")) {
                 loadBalanceOriginTokenReceived = true;
             }
-//            startNewRoundOfTasks();
-            try {
-                loadBalanceInitThreadPoolAndSubmitTasks();
-            } catch (IOException | InterruptedException e) {
-                throw new RuntimeException(e);
-            }
+            startNewRoundOfTasks();
+//            try {
+//                //loadBalanceInitThreadPoolAndSubmitTasks();
+//            } catch (IOException | InterruptedException e) {
+//                throw new RuntimeException(e);
+//            }
         }
     }
 
@@ -605,7 +620,7 @@ public class MessagingNode implements Node{
         }
     }
 
-    private synchronized void generateNewRoundOfTasks () {
+    private void generateNewRoundOfTasks () {
         this.loadMap.clear();
         this.balancedNodesLocalCopy.clear();
         this.currentTasks.clear();
@@ -625,7 +640,7 @@ public class MessagingNode implements Node{
 
         TCPConnection peerConn = this.peerConnections.get(peer);
 
-        System.out.println("Sent "+ stats.toString());
+        logger.info("Sent stats to "+ peer);
         LoadSummaryResponse load = new LoadSummaryResponse(nodeIP, nodePort, stats);
         try {
             peerConn.getSenderThread().sendData(load.marshal());
@@ -635,15 +650,18 @@ public class MessagingNode implements Node{
     }
 
     //record task load info that peer sent as result of the sendTaskInfo function
-    public synchronized void handleLoadSummaryResponse(LoadSummaryResponse traffic) {
+    public void handleLoadSummaryResponse(LoadSummaryResponse traffic) {
         //loadMap.clear();
+        int oldSize = loadMap.size();
         if (loadMap.containsKey(traffic.getNodeIP() + ":" + traffic.getNodePort())) {
             loadMap.replace(traffic.getNodeIP() + ":" + traffic.getNodePort(), traffic.getCurrentTasks());
         } else {
             loadMap.put(traffic.getNodeIP() + ":" + traffic.getNodePort(), traffic.getCurrentTasks());
         }
-        System.out.println("Received load summary from neighbor ");
+        System.out.println("Received load summary from neighbor "+ traffic.getNodeIP() + ":" + traffic.getNodePort());
         loadStatisticsMessageAroundRingCounter.countDown();
+
+        logger.info("New latch size after handling load "+ loadStatisticsMessageAroundRingCounter.getCount());
 //        System.out.println("New load statistics latch val " + loadStatisticsMessageAroundRingCounter.getCount());
 //        printCurrentLoadMap();
 //        if (loadStatisticsMessageAroundRingCounter.getCount() == 0 && this.loadBalanceOriginTokenReceived) {

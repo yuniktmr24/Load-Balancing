@@ -1,7 +1,6 @@
 package csx55.domain;
 
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class StatsEngine {
     private AtomicInteger currentTasks;
@@ -95,5 +94,7 @@ public class StatsEngine {
         this.currentTasks.getAndDecrement();
     }
 
-
+    public void setCompletedTasks(int completedTasks) {
+        this.completedTasks.set(completedTasks);
+    }
 }

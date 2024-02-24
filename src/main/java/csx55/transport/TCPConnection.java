@@ -37,7 +37,7 @@ public class TCPConnection {
     public void closeConnection() throws IOException, InterruptedException {
         TimeUnit.SECONDS.sleep( 1 );
         this.socket.close();
-        this.senderThread.terminateSender();
+        //this.senderThread.terminateSender();
         this.receiverThread.terminateReceiver();
     }
 
