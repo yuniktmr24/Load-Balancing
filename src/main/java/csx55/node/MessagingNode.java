@@ -72,7 +72,7 @@ public class MessagingNode implements Node{
 
     public static void main(String[] args) throws IOException {
         //try (Socket socketToRegistry = new Socket(args[0], Integer.parseInt(args[1]));
-             try (Socket socketToRegistry = new Socket("localhost", 12341);
+             try (Socket socketToRegistry = new Socket("localhost", 12331);
              ServerSocket peerServer = new ServerSocket(0);
         ) {
             System.out.println("Connecting to server...");
@@ -113,14 +113,14 @@ public class MessagingNode implements Node{
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        System.out.println("Generated "+ numTasks + " tasks");
+        logger.info("Generated "+ numTasks + " tasks");
         stats.setGeneratedCount(numTasks);
         stats.setCurrentTasks(numTasks);
         int selfLoad = stats.getCurrentTasks().get();
         this.loadMap.put(this.nodeIP+":"+this.nodePort, selfLoad);
         //fresh set of tasks. fresh loads.
         //TODO: peer loads. Replace with message rounds going aroundf the ring
-        System.out.println("Latch od ize "+ this.neighbors.size());
+        logger.info("Latch of size "+ this.neighbors.size());
         loadStatisticsMessageAroundRingCounter = new CountDownLatch(this.neighbors.size());
         for (String peer: neighbors) {
             String peerIp = peer.split(":")[0].trim();
@@ -130,9 +130,12 @@ public class MessagingNode implements Node{
                 TCPConnection connection = new TCPConnection(this, peerSocket);
                 peerConnections.put(peer, connection);
 
-                ClientConnection conn = new ClientConnection(this.getNodeIP(), RequestType.REQUEST_TOTAL_TASK_INFO, this.getNodePort());
-                connection.getSenderThread().sendData(conn.marshal());
-                connection.startConnection();
+                if (loadBalanceOriginTokenReceived) {
+                    ClientConnection conn = new ClientConnection(this.getNodeIP(), RequestType.REQUEST_TOTAL_TASK_INFO, this.getNodePort());
+                    //start round to request load info from the peers
+                    connection.getSenderThread().sendData(conn.marshal());
+                    connection.startConnection();
+                }
 
             } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
@@ -614,8 +617,14 @@ public class MessagingNode implements Node{
             //loadStatisticsMessageAroundRingCounter.await(); //wait for total loads across the network to be collected before load balancing
             taskGeneratedCounter.await();
             //new thread TODO
-            loadBalanceInitThreadPoolAndSubmitTasks();
-        } catch (IOException | InterruptedException e) {
+            new Thread(() -> {
+                try {
+                    loadBalanceInitThreadPoolAndSubmitTasks();
+                } catch (IOException | InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }).start();
+        } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
     }
@@ -635,16 +644,19 @@ public class MessagingNode implements Node{
     }
 
     //send task info to peer that requests it.
-    public synchronized void sendTaskInfo(ClientConnection peerConnection, TCPConnection connection) {
+    public void sendTaskInfo(ClientConnection peerConnection, TCPConnection connection) {
+        logger.info("Received task load request from source node");
         String peer = peerConnection.getIpAddress()+":"+peerConnection.getPort();
 
         TCPConnection peerConn = this.peerConnections.get(peer);
 
-        logger.info("Sent stats to "+ peer);
         LoadSummaryResponse load = new LoadSummaryResponse(nodeIP, nodePort, stats);
         try {
             peerConn.getSenderThread().sendData(load.marshal());
+            peerConn.startConnection();
+            logger.info("Sent stats to "+ peer);
         } catch (InterruptedException | IOException e) {
+            e.printStackTrace();
             throw new RuntimeException(e);
         }
     }

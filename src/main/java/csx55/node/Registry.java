@@ -36,7 +36,7 @@ public class Registry implements Node{
     private CountDownLatch singleRoundTaskCompleteCounter;
 
     public static void main (String[] args) {
-        int registryPort = args.length >= 1 ? Integer.parseInt(args[0]) : 12341;
+        int registryPort = args.length >= 1 ? Integer.parseInt(args[0]) : 12331;
         try (ServerSocket serverSocket = new ServerSocket(registryPort)) {
             System.out.println("Server listening on port " + registryPort + "...");
             Registry registry = Registry.getInstance();
@@ -121,7 +121,7 @@ public class Registry implements Node{
                         int idx = 0;
                         for (OverlayNode node: overlayNodeList) {
                             ServerResponse res2 = new ServerResponse(RequestType.MESSAGE_ROUND_INITIATE, StatusCode.SUCCESS, "");
-                            if (idx == sourceNode) {
+                            if (idx != sourceNode) {
                                 node.getConnection().getSenderThread().sendData(res2.marshal());
                             }
                             idx++;
