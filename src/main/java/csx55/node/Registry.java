@@ -13,6 +13,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
@@ -34,6 +35,8 @@ public class Registry implements Node{
     private static TCPServerThread registryServerThread;
 
     private CountDownLatch singleRoundTaskCompleteCounter;
+
+    private Map <String, CollatedTrafficStats> collatedStatsMap = new ConcurrentHashMap<>();
 
     public static void main (String[] args) {
         int registryPort = args.length >= 1 ? Integer.parseInt(args[0]) : 12331;
@@ -131,6 +134,10 @@ public class Registry implements Node{
                         //reinit the latch for next round of msg
                         singleRoundTaskCompleteCounter = new CountDownLatch(overlayNodes.size());
                     }
+                    System.out.println("Final stats after "+ rounds + " rounds");
+                    for (CollatedTrafficStats collated: collatedStatsMap.values()) {
+                        System.out.println(collated.toString());
+                    }
                 }
             }
         } catch (Exception e) {
@@ -147,6 +154,18 @@ public class Registry implements Node{
     public synchronized void recordCompletedTaskFromMessagingNode(TaskCompleteResponse complete) {
         System.out.println("Received completed tasks stats from " + complete.getNodeIP()+":"+complete.getNodePort());
         System.out.println(complete.toString());
+
+        String nodeDescriptor = complete.getNodeIP()+":"+complete.getNodePort();
+        if (collatedStatsMap.containsKey(nodeDescriptor)) {
+            //add to old stats
+            CollatedTrafficStats stats = collatedStatsMap.get(nodeDescriptor);
+            stats.addStats(complete);
+        }
+        else{
+            //add stats for a node for the first time
+            CollatedTrafficStats stats = new CollatedTrafficStats(complete);
+            collatedStatsMap.put(nodeDescriptor, stats);
+        }
         if (singleRoundTaskCompleteCounter != null) {
             singleRoundTaskCompleteCounter.countDown();
         }

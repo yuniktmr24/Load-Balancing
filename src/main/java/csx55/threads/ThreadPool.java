@@ -1,6 +1,7 @@
 package csx55.threads;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -8,7 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ThreadPool {
     private BlockingQueue taskQueue; //queue of runnables
-    private List<ThreadPoolThread> threadList = new ArrayList<>();
+    private List<ThreadPoolThread> threadList = Collections.synchronizedList(new ArrayList<>());
 
     private AtomicBoolean stopped = new AtomicBoolean(false);
 
@@ -18,9 +19,11 @@ public class ThreadPool {
         taskQueue = new ArrayBlockingQueue(maxNumberOfTasks);
         taskCompletionLatch = new CountDownLatch(submittedTasks);
 
-        for (int i = 0; i < numThreads; i++){
-            ThreadPoolThread thread = new ThreadPoolThread("thread "+ i, taskQueue, taskCompletionLatch);
-            threadList.add(thread);
+        synchronized(threadList) {
+            for (int i = 0; i < numThreads; i++) {
+                ThreadPoolThread thread = new ThreadPoolThread("thread " + i, taskQueue, taskCompletionLatch);
+                threadList.add(thread);
+            }
         }
         System.out.println("Thread pool created with # of threads "+ numThreads);
 

@@ -276,6 +276,10 @@ public class MessagingNode implements Node{
             });
             System.out.println("Load balancing done");
             printCurrentLoadMap();
+            if (threadPool != null) {
+                logger.info("Cleaning up old thread pool instance");
+                threadPool.stop(); //clean up before starting new threadpool instance
+            }
             threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
             submitAndWaitUntilTasksComplete();
         }
@@ -356,7 +360,6 @@ public class MessagingNode implements Node{
                 //stats.incrementCompletedCount();
             });
         }
-        System.out.println("Done");
     }
 
     public void registerNode (MessagingNode node, Socket socketToRegistry) {
@@ -592,7 +595,7 @@ public class MessagingNode implements Node{
 
         //first setup threadpool
         if (threadPool != null) {
-            System.out.println("Cleaning up old thread pool instance");
+            logger.info("Cleaning up old thread pool instance");
             threadPool.stop(); //clean up before starting new threadpool instance
         }
         stats.reset();
@@ -778,6 +781,10 @@ public class MessagingNode implements Node{
         //well as per experiments, looks like the network is balanced after lb operation
         // at the self node , so lets run the tasks in the target nodes.
         //not the node with balance token
+        if (threadPool != null) {
+            logger.info("Cleaning up old thread pool instance");
+            threadPool.stop(); //clean up before starting new threadpool instance
+        }
         threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
         submitAndWaitUntilTasksComplete();
 

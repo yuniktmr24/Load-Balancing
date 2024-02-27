@@ -6,17 +6,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ThreadPoolThread implements Runnable {
    // private AtomicBoolean execute;
-    private Thread thread =  Thread.currentThread();
+    private Thread thread =  new Thread();
     private BlockingQueue taskQueue;
 
     private AtomicBoolean stopped = new AtomicBoolean(false);
 
-    private final CountDownLatch taskCompletionLatch;
+    private CountDownLatch taskCompletionLatch = null;
 
     public ThreadPoolThread(String threadName, BlockingQueue queue, CountDownLatch latch) {
-        thread.setName(threadName);
-        this.taskQueue = queue;
-        this.taskCompletionLatch = latch;
+        try {
+            thread.setName(threadName);
+            this.taskQueue = queue;
+            this.taskCompletionLatch = latch;
+        }
+        catch (Exception ex) {
+            ex.printStackTrace();
+        }
     }
 
     @Override
