@@ -310,7 +310,7 @@ public class MessagingNode implements Node{
                 this.registryConnection.getSenderThread().sendData(resp.marshal());
 
                 this.loadBalanceOriginTokenReceived = false; //reset token for new round
-                //stats.reset();
+                stats.reset();
                 System.out.println("Stats at end of round "+ stats.toString());
                 //generateNewRoundOfTasks();
                 System.out.println("New round of tasks being generated");
