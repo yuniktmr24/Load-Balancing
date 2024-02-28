@@ -19,11 +19,9 @@ public class ThreadPool {
         taskQueue = new ArrayBlockingQueue(maxNumberOfTasks);
         taskCompletionLatch = new CountDownLatch(submittedTasks);
 
-        synchronized(threadList) {
-            for (int i = 0; i < numThreads; i++) {
-                ThreadPoolThread thread = new ThreadPoolThread("thread " + i, taskQueue, taskCompletionLatch);
-                threadList.add(thread);
-            }
+        for (int i = 0; i < numThreads; i++) {
+            ThreadPoolThread thread = new ThreadPoolThread("thread " + i, taskQueue, taskCompletionLatch);
+            threadList.add(thread);
         }
         System.out.println("Thread pool created with # of threads "+ numThreads);
 

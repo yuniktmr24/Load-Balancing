@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ThreadPoolThread implements Runnable {
    // private AtomicBoolean execute;
-    private Thread thread =  new Thread();
+    private final Thread thread =  new Thread();
     private BlockingQueue taskQueue;
 
     private AtomicBoolean stopped = new AtomicBoolean(false);

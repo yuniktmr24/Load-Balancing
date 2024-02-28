@@ -128,13 +128,14 @@ public class MessagingNode implements Node{
             try {
                 Socket peerSocket = new Socket(peerIp, peerPort);
                 TCPConnection connection = new TCPConnection(this, peerSocket);
+                connection.startConnection();
                 peerConnections.put(peer, connection);
 
                 if (loadBalanceOriginTokenReceived) {
                     ClientConnection conn = new ClientConnection(this.getNodeIP(), RequestType.REQUEST_TOTAL_TASK_INFO, this.getNodePort());
                     //start round to request load info from the peers
                     connection.getSenderThread().sendData(conn.marshal());
-                    connection.startConnection();
+                    //connection.startConnection();
                 }
 
             } catch (IOException | InterruptedException e) {
@@ -199,11 +200,15 @@ public class MessagingNode implements Node{
                     int difference = Math.abs(currentAverage - selfLoad);
                     selfLoad = selfLoad + difference;
                     //pull tasks; [TODO fix NPE here]
-                    TaskList pullTask = new TaskList(difference, nodeIP + ":" + nodePort);
-                    this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(pullTask.marshal());
-                    //sleep so that the currentTaskList has time to update //or create a latch TODO
-                    pullCounter = new CountDownLatch(difference);
-                    pullCounter.await();
+                    if (difference != 0) {
+                        TaskList pullTask = new TaskList(difference, nodeIP + ":" + nodePort);
+                        this.peerConnections.get(nodeWithMaxLoad).getSenderThread().sendData(pullTask.marshal());
+
+                        //sleep so that the currentTaskList has time to update //or create a latch TODO
+                        pullCounter = new CountDownLatch(difference);
+                        logger.info("Awaiting all tasks to be pulled. Latch count "+ pullCounter);
+                        pullCounter.await();
+                    }
 
                     //TimeUnit.SECONDS.sleep(10);
                     System.out.println("Updated self load after balance substeps = " + selfLoad);
@@ -234,7 +239,10 @@ public class MessagingNode implements Node{
                     int difference = Math.abs(selfLoad - currentAverage);
                     selfLoad = selfLoad - difference;
                     //TODO L fix npe
-                    pushNTasks(difference, nodeWithMinLoad);
+
+                    if (difference != 0) {
+                        pushNTasks(difference, nodeWithMinLoad);
+                    }
                     System.out.println("Updated self load after balance substeps = " + selfLoad);
                     currentMinLoad = currentMinLoad + difference;
                     //update own load map with intermediate values
@@ -617,7 +625,7 @@ public class MessagingNode implements Node{
     private synchronized void startNewRoundOfTasks () {
         generateNewRoundOfTasks();
         try {
-            //loadStatisticsMessageAroundRingCounter.await(); //wait for total loads across the network to be collected before load balancing
+             //wait for total loads across the network to be collected before load balancing
             taskGeneratedCounter.await();
             //new thread TODO
             new Thread(() -> {
@@ -647,7 +655,7 @@ public class MessagingNode implements Node{
     }
 
     //send task info to peer that requests it.
-    public void sendTaskInfo(ClientConnection peerConnection, TCPConnection connection) {
+    public synchronized void sendTaskInfo(ClientConnection peerConnection, TCPConnection connection) {
         logger.info("Received task load request from source node");
         String peer = peerConnection.getIpAddress()+":"+peerConnection.getPort();
 
@@ -656,7 +664,7 @@ public class MessagingNode implements Node{
         LoadSummaryResponse load = new LoadSummaryResponse(nodeIP, nodePort, stats);
         try {
             peerConn.getSenderThread().sendData(load.marshal());
-            peerConn.startConnection();
+            //peerConn.startConnection();
             logger.info("Sent stats to "+ peer);
         } catch (InterruptedException | IOException e) {
             e.printStackTrace();
@@ -665,7 +673,7 @@ public class MessagingNode implements Node{
     }
 
     //record task load info that peer sent as result of the sendTaskInfo function
-    public void handleLoadSummaryResponse(LoadSummaryResponse traffic) {
+    public synchronized void handleLoadSummaryResponse(LoadSummaryResponse traffic) {
         //loadMap.clear();
         int oldSize = loadMap.size();
         if (loadMap.containsKey(traffic.getNodeIP() + ":" + traffic.getNodePort())) {
@@ -729,9 +737,9 @@ public class MessagingNode implements Node{
     //thread hasn't released the lock on this, but is waiting for this method to return, which will not happen
     //DEADLOCK!!!!!!! If sync'ed
     //WARNING: DONT SYNC THIS. REMEMBER THE TORTURE
-    public void handleTaskMigrations(TaskList taskList) {
-        System.out.println("Hanlding task migration");
-        Thread migrationThread = new Thread(() -> {
+    public synchronized void handleTaskMigrations(TaskList taskList) {
+        System.out.println("Handling task migration");
+//        Thread migrationThread = new Thread(() -> {
             if (taskList.getOperations().equals(TaskOperations.PUSH)) {
                 System.out.println("Pulled tasks # " + taskList.getTasks().length);
                 for (Task task : taskList.getTasks()) {
@@ -740,15 +748,18 @@ public class MessagingNode implements Node{
                     stats.incrementPullCount();
                     if (pullCounter != null) {
                         pullCounter.countDown();
+                        //logger.info("PullCounter latch val # "+ pullCounter.getCount());
                     }
                 }
             }
             //pull
             else {
+                System.out.println("Pushing tasks # " + taskList.getTasks().length);
                 pushNTasks(taskList.getRequestedTaskNum(), taskList.getRequestingNode());
+
             }
-        });
-        migrationThread.start();
+
+//        migrationThread.start();
         //printCurrentTasks("(After bulk pull)");
     }
 
