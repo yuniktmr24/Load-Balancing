@@ -1,6 +1,6 @@
 package csx55.transport;
 
-import csx55.node.Node;
+import csx55.threads.Node;
 
 import java.io.IOException;
 import java.net.ServerSocket;

@@ -1,4 +1,4 @@
-package csx55.node;
+package csx55.threads;
 
 import csx55.domain.*;
 import csx55.overlay.OverlayCreator;
@@ -110,6 +110,7 @@ public class Registry implements Node{
                     //collatedTrafficStats = new CollatedTrafficStats();
                     int rounds = Integer.parseInt(userInput.split(" ")[1]);
                     System.out.println("Sending "+ rounds + " round of messages");
+                    System.out.println("****************************");
                     //TODO loop this
                     for (int i = 0; i < rounds; i++) {
                         ServerResponse res = new ServerResponse(RequestType.MESSAGE_ROUND_INITIATE, StatusCode.SUCCESS, "TOKEN_BALANCE_RECEIVER");
@@ -131,13 +132,34 @@ public class Registry implements Node{
                         }
                         singleRoundTaskCompleteCounter.await();
                         System.out.println("All tasks completed for given round");
+                        System.out.println("****************************");
                         //reinit the latch for next round of msg
                         singleRoundTaskCompleteCounter = new CountDownLatch(overlayNodes.size());
                     }
+                    //get global total
+                    int totalTasks = 0;
+                    int totalPushed = 0;
+                    int totalPulled = 0;
+                    int totalCompleted = 0;
+                    for (CollatedTrafficStats collated: collatedStatsMap.values()) {
+                        totalTasks += collated.getGeneratedTotal();
+                        totalPushed += collated.getPushedTotal();
+                        totalPulled += collated.getPulledTotal();
+                        totalCompleted += collated.getCompletedTotal();
+                    }
+                    System.out.println("****************************");
                     System.out.println("Final stats after "+ rounds + " rounds");
                     for (CollatedTrafficStats collated: collatedStatsMap.values()) {
+                        collated.setGlobalTotal(totalTasks);
                         System.out.println(collated.toString());
                     }
+                    System.out.printf(String.format( "%1$-20s %2$-20s %3$-20s %4$-20s %5$-20s %6$-20s",
+                            "Total",
+                            Integer.toString( totalTasks ),
+                            Integer.toString( totalPulled ), Integer.toString( totalPushed ),
+                            Integer.toString( totalCompleted ), Double.toString(100)));
+                    System.out.println();
+                    System.out.println("****************************");
                 }
             }
         } catch (Exception e) {
@@ -152,7 +174,7 @@ public class Registry implements Node{
     }
 
     public synchronized void recordCompletedTaskFromMessagingNode(TaskCompleteResponse complete) {
-        System.out.println("Received completed tasks stats from " + complete.getNodeIP()+":"+complete.getNodePort());
+        //System.out.println("Received completed tasks stats from " + complete.getNodeIP()+":"+complete.getNodePort());
         System.out.println(complete.toString());
 
         String nodeDescriptor = complete.getNodeIP()+":"+complete.getNodePort();

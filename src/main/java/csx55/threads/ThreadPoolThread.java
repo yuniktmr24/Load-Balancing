@@ -1,5 +1,7 @@
 package csx55.threads;
 
+import csx55.hashing.Task;
+
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -28,8 +30,10 @@ public class ThreadPoolThread implements Runnable {
     public void run() {
         try {
             while (!stopped.get()) {
-                Runnable task = (Runnable) taskQueue.take();
+                Object taskObj = taskQueue.take();
+                Runnable task = (Runnable) taskObj;
                 task.run();
+                //System.out.println(((Task)taskObj).toString()); //well java throws a cast exception
                 taskCompletionLatch.countDown();
             }
 

@@ -2,9 +2,9 @@ package csx55.transport;
 
 import csx55.domain.*;
 import csx55.hashing.Task;
-import csx55.node.MessagingNode;
-import csx55.node.Node;
-import csx55.node.Registry;
+import csx55.threads.ComputeNode;
+import csx55.threads.Node;
+import csx55.threads.Registry;
 
 import java.io.*;
 import java.net.Socket;
@@ -71,47 +71,51 @@ public class TCPReceiverThread implements Runnable{
                         ex.printStackTrace();
                     }
                 }
-                else if (node instanceof MessagingNode) {
+                else if (node instanceof ComputeNode) {
                     //can be peer to
                     try {
                         if (domainType == Protocol.CLIENT_CONNECTION) {
                             ClientConnection peerConnection = new ClientConnection().unmarshal(data);
                             if (peerConnection.getRequestType().equals(RequestType.REQUEST_TOTAL_TASK_INFO)) {
-                                ((MessagingNode) node).sendTaskInfo(peerConnection, connection);
+                                ((ComputeNode) node).sendTaskInfo(peerConnection, connection);
                             }
+                        }
+                        else if (domainType == Protocol.RING_MESSAGE) {
+                            RingMessage ring = new RingMessage().unmarshal(data);
+                            ((ComputeNode)node).receiveMessageRoundViaRing(ring);
                         }
                         else if (domainType == Protocol.TOPOLOGY_INFO) {
                             TopologyInfo info = new TopologyInfo().unmarshal(data);
-                            ((MessagingNode)node).initThreadCount(info);
+                            ((ComputeNode)node).initThreadCount(info);
                         }
                         else if (domainType == Protocol.LOAD_SUMMARY) {
                             LoadSummaryResponse traffic = new LoadSummaryResponse().unmarshal(data);
-                            ((MessagingNode) node).handleLoadSummaryResponse(traffic);
+                            ((ComputeNode) node).handleLoadSummaryResponse(traffic);
                         }
                         else if (domainType == Protocol.TASK) {
                             Task task = new Task().unmarshal(data);
-                            ((MessagingNode) node).pullSingleTask(task);
+                            ((ComputeNode) node).pullSingleTask(task);
                         }
                         else if (domainType == Protocol.TASK_LIST) {
                             TaskList taskList = new TaskList().unmarshal(data);
-                            ((MessagingNode) node).handleTaskMigrations(taskList);
+                            ((ComputeNode) node).handleTaskMigrations(taskList);
                         }
                         else if (domainType == Protocol.BALANCED_NODES) {
                             BalancedNodes balanced = new BalancedNodes().unmarshal(data);
-                            ((MessagingNode) node).copyStaticBalancedNodesInfoToLocal(balanced);
+                            ((ComputeNode) node).copyStaticBalancedNodesInfoToLocal(balanced);
                         }
 
 //                        else if (domainType == 3) {
 //                            TaskInitiate startTask = new TaskInitiate().unmarshal(data);
-//                            ((MessagingNode)node).initiateMessageRounds(startTask);
+//                            ((ComputeNode)node).initiateMessageRounds(startTask);
 //                        }
 //                        else if (domainType == 5) {
 //                            Message msg = new Message().unmarshal(data);
-//                            ((MessagingNode)node).handleMessageRounds(msg);
+//                            ((ComputeNode)node).handleMessageRounds(msg);
 //                        }
                         else {
                             ServerResponse res = new ServerResponse().unmarshal(data);
-                            ((MessagingNode)node).receiveServerData(res);
+                            ((ComputeNode)node).receiveServerData(res);
                         }
                     }
                     catch (Exception ex) {
