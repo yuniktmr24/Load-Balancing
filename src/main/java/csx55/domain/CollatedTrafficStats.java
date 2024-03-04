@@ -14,6 +14,16 @@ public class CollatedTrafficStats {
 
     private double percentCompleted;
 
+    private int globalTotal;
+
+    private int totalPulled;
+
+    private int totalPushed;
+
+    private int totalCompleted;
+
+
+
     public CollatedTrafficStats(TaskCompleteResponse stats) {
         nodeIP = stats.getNodeIP();
         nodePort = stats.getNodePort();
@@ -21,7 +31,6 @@ public class CollatedTrafficStats {
         this.pulledTotal = stats.getPulledTasks();
         this.pushedTotal = stats.getPushedTasks();
         this.completedTotal = stats.getCompletedTasks();
-        percentCompleted = (double)(completedTotal) / generatedTotal;
     }
 
     public void addStats (TaskCompleteResponse stats) {
@@ -29,11 +38,14 @@ public class CollatedTrafficStats {
         this.pulledTotal += stats.getPulledTasks();
         this.pushedTotal += stats.getPushedTasks();
         this.completedTotal += stats.getCompletedTasks();
-        percentCompleted = (double)(completedTotal) / generatedTotal;
     }
 
+    public void setGlobalTotal(int globalTotal) {
+        this.globalTotal = globalTotal;
+        this.percentCompleted = ((double) this.completedTotal / this.globalTotal) * 100;
+    }
 
-        public String toString() {
+    public String toString() {
             return String.format( "%1$-20s %2$-20s %3$-20s %4$-20s %5$-20s %6$-20s",
                     nodeIP + ":" + Integer.toString( nodePort ), Integer.toString( generatedTotal ),
                     Integer.toString( pulledTotal ), Integer.toString( pushedTotal ),
@@ -66,5 +78,17 @@ public class CollatedTrafficStats {
 
     public double getPercentCompleted() {
         return percentCompleted;
+    }
+
+    public void setPulledTotal(int pulledTotal) {
+        this.pulledTotal = pulledTotal;
+    }
+
+    public void setPushedTotal(int pushedTotal) {
+        this.pushedTotal = pushedTotal;
+    }
+
+    public void setCompletedTotal(int completedTotal) {
+        this.completedTotal = completedTotal;
     }
 }

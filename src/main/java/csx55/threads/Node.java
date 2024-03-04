@@ -1,4 +1,4 @@
-package csx55.node;
+package csx55.threads;
 
 public interface Node {
 }

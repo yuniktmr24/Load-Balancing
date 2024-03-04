@@ -1,6 +1,6 @@
 package csx55.transport;
 
-import csx55.node.Node;
+import csx55.threads.Node;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -39,11 +39,12 @@ public class TCPServerThread implements Runnable {
         System.out.println("Started Server thread at "+ serverSocket.getLocalPort());
         while (serverSocket != null) {
             try {
-                System.out.println("Server has new messages");
+                //System.out.println("Server has new messages");
                 Socket socket = serverSocket.accept();
                 new TCPConnection(node, socket).startConnection();
             } catch (IOException e) {
-                e.printStackTrace();
+                System.out.println("Node exited connection");
+                //e.printStackTrace();
             }
         }
     }

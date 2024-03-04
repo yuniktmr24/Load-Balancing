@@ -18,5 +18,7 @@ public interface Protocol {
 
     final int TASK_COMPLETE = 9;
 
+    final int RING_MESSAGE = 10;
+
 
 }
