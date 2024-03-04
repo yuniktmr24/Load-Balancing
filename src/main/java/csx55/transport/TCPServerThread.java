@@ -39,11 +39,12 @@ public class TCPServerThread implements Runnable {
         System.out.println("Started Server thread at "+ serverSocket.getLocalPort());
         while (serverSocket != null) {
             try {
-                System.out.println("Server has new messages");
+                //System.out.println("Server has new messages");
                 Socket socket = serverSocket.accept();
                 new TCPConnection(node, socket).startConnection();
             } catch (IOException e) {
-                e.printStackTrace();
+                System.out.println("Node exited connection");
+                //e.printStackTrace();
             }
         }
     }

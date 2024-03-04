@@ -490,6 +490,7 @@ public class ComputeNode implements Node{
                     ClientConnection conn2 = new ClientConnection(node.getNodeIP(), RequestType.DEREGISTER, node.getNodePort());
                     byte[] dataToSend2 = conn2.marshal();
                     this.registryConnection.getSenderThread().sendData(dataToSend2);
+                    System.exit(0);
                     //  TimeUnit.SECONDS.sleep(3);
                     // this.registryConnection.closeConnection();
                 } else if (userInput.equals(UserCommands.PRINT_NEIGHBOR.getCmd()) || userInput.equals(String.valueOf(UserCommands.PRINT_NEIGHBOR.getCmdId()))) {

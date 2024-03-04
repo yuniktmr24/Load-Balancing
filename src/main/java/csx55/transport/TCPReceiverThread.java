@@ -127,9 +127,12 @@ public class TCPReceiverThread implements Runnable{
 
                 }
             } catch (Exception e) {
-                System.out.println("Error in node "+ node.toString());
+                //System.out.println("Error in node "+ node.toString());
+                if (node instanceof Registry) {
+                    System.out.println("Node exited connection");
+                }
                 this.close();
-                e.printStackTrace();
+                //e.printStackTrace();
             }
         }
     }
