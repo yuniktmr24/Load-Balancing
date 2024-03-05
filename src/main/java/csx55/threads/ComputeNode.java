@@ -72,8 +72,8 @@ public class ComputeNode implements Node{
     private CountDownLatch pullCounter;
 
     public static void main(String[] args) throws IOException {
-        //try (Socket socketToRegistry = new Socket(args[0], Integer.parseInt(args[1]));
-             try (Socket socketToRegistry = new Socket("localhost", 12331);
+        try (Socket socketToRegistry = new Socket(args[0], Integer.parseInt(args[1]));
+             //try (Socket socketToRegistry = new Socket("localhost", 12331);
              ServerSocket peerServer = new ServerSocket(0);
         ) {
             logger.info("Connecting to server...");
@@ -367,10 +367,13 @@ public class ComputeNode implements Node{
             logger.info("Load balancing done");
             //printCurrentLoadMap();
             if (threadPool != null) {
-                logger.info("Cleaning up old thread pool instance");
-                threadPool.stop(); //clean up before starting new threadpool instance
+                logger.info("Reusing old thread pool");
+                threadPool.resetSubmittedTasks(stats.getCurrentTasks().get());
+                //threadPool.stop(); //clean up before starting new threadpool instance
             }
-            threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
+            else {
+                threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
+            }
             submitAndWaitUntilTasksComplete();
         }
         else {
@@ -688,6 +691,7 @@ public class ComputeNode implements Node{
         if (threadPool != null) {
             logger.info("Cleaning up old thread pool instance");
             threadPool.stop(); //clean up before starting new threadpool instance
+            threadPool = null;
         }
         stats.reset();
         neighbors.clear();
@@ -879,10 +883,13 @@ public class ComputeNode implements Node{
         // at the self node , so lets run the tasks in the target nodes.
         //not the node with balance token
         if (threadPool != null) {
-            logger.info("Cleaning up old thread pool instance");
-            threadPool.stop(); //clean up before starting new threadpool instance
+            logger.info("Reusing old thread pool");
+            threadPool.resetSubmittedTasks(stats.getCurrentTasks().get());
+            //threadPool.stop(); //clean up before starting new threadpool instance
         }
-        threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
+        else {
+            threadPool = new ThreadPool(this.threadCount, 1000, stats.getCurrentTasks().get());
+        }
         submitAndWaitUntilTasksComplete();
 
         //printBalancedNodesInfo();
