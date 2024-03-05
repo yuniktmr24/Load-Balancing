@@ -46,7 +46,7 @@ public class CollatedTrafficStats {
     }
 
     public String toString() {
-            return String.format( "%1$-20s %2$-20s %3$-20s %4$-20s %5$-20s %6$-20s",
+            return String.format( "%1$-25s %2$-25s %3$-25s %4$-25s %5$-25s %6$-25s",
                     nodeIP + ":" + Integer.toString( nodePort ), Integer.toString( generatedTotal ),
                     Integer.toString( pulledTotal ), Integer.toString( pushedTotal ),
                     Integer.toString( completedTotal ), Double.toString(percentCompleted) );

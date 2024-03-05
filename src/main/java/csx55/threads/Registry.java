@@ -149,11 +149,15 @@ public class Registry implements Node{
                     }
                     System.out.println("****************************");
                     System.out.println("Final stats after "+ rounds + " rounds");
+                    System.out.printf(String.format( "%1$-25s %2$-25s %3$-25s %4$-25s %5$-25s %6$-25s",
+                            "", "Number of generated tasks", "Number of pulled tasks", "Number of pushed tasks"
+                                    ,"Number of completed tasks", "Percent of total tasks performed"));
+                    System.out.println("");
                     for (CollatedTrafficStats collated: collatedStatsMap.values()) {
                         collated.setGlobalTotal(totalTasks);
                         System.out.println(collated.toString());
                     }
-                    System.out.printf(String.format( "%1$-20s %2$-20s %3$-20s %4$-20s %5$-20s %6$-20s",
+                    System.out.printf(String.format( "%1$-25s %2$-25s %3$-25s %4$-25s %5$-25s %6$-25s",
                             "Total",
                             Integer.toString( totalTasks ),
                             Integer.toString( totalPulled ), Integer.toString( totalPushed ),
