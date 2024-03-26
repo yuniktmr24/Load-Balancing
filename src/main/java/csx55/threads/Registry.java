@@ -109,8 +109,8 @@ public class Registry implements Node{
                     singleRoundTaskCompleteCounter = new CountDownLatch(overlayNodes.size());
                     //collatedTrafficStats = new CollatedTrafficStats();
                     int rounds = Integer.parseInt(userInput.split(" ")[1]);
-                    System.out.println("Sending "+ rounds + " round of messages");
-                    System.out.println("****************************");
+                    //System.out.println("Sending "+ rounds + " round of messages");
+                    //System.out.println("****************************");
                     //TODO loop this
                     for (int i = 0; i < rounds; i++) {
                         ServerResponse res = new ServerResponse(RequestType.MESSAGE_ROUND_INITIATE, StatusCode.SUCCESS, "TOKEN_BALANCE_RECEIVER");
@@ -119,7 +119,7 @@ public class Registry implements Node{
                         List<OverlayNode> overlayNodeList = new ArrayList<>(overlayNodes);
                         int sourceNode = randomNodeForBalanceStart.nextInt(overlayNodes.size() - 1);
                         OverlayNode tokenBearer = overlayNodeList.get(sourceNode);
-                        System.out.println("Token bearer node " + tokenBearer.getDescriptor());
+                        //System.out.println("Token bearer node " + tokenBearer.getDescriptor());
                         tokenBearer.getConnection().getSenderThread().sendData(res.marshal());
                         //also the other needs to geneerate rando, number of tasks
                         int idx = 0;
@@ -131,8 +131,8 @@ public class Registry implements Node{
                             idx++;
                         }
                         singleRoundTaskCompleteCounter.await();
-                        System.out.println("All tasks completed for given round");
-                        System.out.println("****************************");
+                        //System.out.println("All tasks completed for given round");
+                        //System.out.println("****************************");
                         //reinit the latch for next round of msg
                         singleRoundTaskCompleteCounter = new CountDownLatch(overlayNodes.size());
                     }
@@ -147,19 +147,23 @@ public class Registry implements Node{
                         totalPulled += collated.getPulledTotal();
                         totalCompleted += collated.getCompletedTotal();
                     }
-                    System.out.println("****************************");
-                    System.out.println("Final stats after "+ rounds + " rounds");
+                   // System.out.println("****************************");
+                   // System.out.println("Final stats after "+ rounds + " rounds");
+                    System.out.printf(String.format( "%1$-25s %2$-25s %3$-25s %4$-25s %5$-25s %6$-25s",
+                            "", "Number of generated tasks", "Number of pulled tasks", "Number of pushed tasks"
+                                    ,"Number of completed tasks", "Percent of total tasks performed"));
+                    System.out.println("");
                     for (CollatedTrafficStats collated: collatedStatsMap.values()) {
                         collated.setGlobalTotal(totalTasks);
                         System.out.println(collated.toString());
                     }
-                    System.out.printf(String.format( "%1$-20s %2$-20s %3$-20s %4$-20s %5$-20s %6$-20s",
+                    System.out.printf(String.format( "%1$-25s %2$-25s %3$-25s %4$-25s %5$-25s %6$-25s",
                             "Total",
                             Integer.toString( totalTasks ),
                             Integer.toString( totalPulled ), Integer.toString( totalPushed ),
                             Integer.toString( totalCompleted ), Double.toString(100)));
                     System.out.println();
-                    System.out.println("****************************");
+                    //System.out.println("****************************");
                 }
             }
         } catch (Exception e) {
@@ -175,7 +179,7 @@ public class Registry implements Node{
 
     public synchronized void recordCompletedTaskFromMessagingNode(TaskCompleteResponse complete) {
         //System.out.println("Received completed tasks stats from " + complete.getNodeIP()+":"+complete.getNodePort());
-        System.out.println(complete.toString());
+        //System.out.println(complete.toString());
 
         String nodeDescriptor = complete.getNodeIP()+":"+complete.getNodePort();
         if (collatedStatsMap.containsKey(nodeDescriptor)) {

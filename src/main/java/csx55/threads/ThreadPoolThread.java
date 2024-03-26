@@ -35,6 +35,7 @@ public class ThreadPoolThread implements Runnable {
                 task.run();
                 //System.out.println(((Task)taskObj).toString()); //well java throws a cast exception
                 taskCompletionLatch.countDown();
+                //System.out.println("tsk latch "+taskCompletionLatch.getCount());
             }
 
             } catch (InterruptedException e) {
@@ -53,8 +54,11 @@ public class ThreadPoolThread implements Runnable {
 
     public boolean awaitCompletion() throws InterruptedException {
         taskCompletionLatch.await();
-        System.out.println("All tasks complete");
+        //System.out.println("All tasks complete");
         return true; // All tasks have completed
     }
 
+    public void setTaskCompletionLatch(CountDownLatch taskCompletionLatch) {
+        this.taskCompletionLatch = taskCompletionLatch;
+    }
 }

@@ -13,7 +13,7 @@ public class ThreadPool {
 
     private AtomicBoolean stopped = new AtomicBoolean(false);
 
-    private final CountDownLatch taskCompletionLatch;
+    private CountDownLatch taskCompletionLatch;
 
     public ThreadPool(int numThreads, int maxNumberOfTasks, int submittedTasks) {
         taskQueue = new ArrayBlockingQueue(maxNumberOfTasks);
@@ -23,12 +23,20 @@ public class ThreadPool {
             ThreadPoolThread thread = new ThreadPoolThread("thread " + i, taskQueue, taskCompletionLatch);
             threadList.add(thread);
         }
-        System.out.println("Thread pool created with # of threads "+ numThreads);
+        //System.out.println("Thread pool created with # of threads "+ numThreads);
 
         for (ThreadPoolThread runnable: threadList) {
             new Thread(runnable).start();
         }
 
+    }
+
+    //reuse old threads for new rounds
+    public void resetSubmittedTasks(int submittedTasks) {
+        taskCompletionLatch = new CountDownLatch(submittedTasks);
+        for (ThreadPoolThread runnable: threadList) {
+            runnable.setTaskCompletionLatch(taskCompletionLatch);
+        }
     }
 
     public synchronized void submit (Runnable task) {
@@ -49,7 +57,7 @@ public class ThreadPool {
 
     public boolean awaitCompletion() throws InterruptedException {
         taskCompletionLatch.await();
-        System.out.println("All tasks complete");
+        //System.out.println("All tasks complete");
         return true; // All tasks
     }
 
