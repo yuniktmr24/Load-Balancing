@@ -76,7 +76,7 @@ public class ComputeNode implements Node{
              //try (Socket socketToRegistry = new Socket("localhost", 12331);
              ServerSocket peerServer = new ServerSocket(0);
         ) {
-            logger.info("Connecting to server...");
+            //logger.info("Connecting to server...");
 
             ComputeNode node = new ComputeNode();
             node.setNodeIP(InetAddress.getLocalHost().getHostAddress());
@@ -114,7 +114,7 @@ public class ComputeNode implements Node{
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        logger.info("Generated "+ numTasks + " tasks");
+        //logger.info("Generated "+ numTasks + " tasks");
         stats.setGeneratedCount(numTasks);
         stats.setCurrentTasks(numTasks);
         int selfLoad = stats.getCurrentTasks().get();
@@ -231,7 +231,7 @@ public class ComputeNode implements Node{
             loadStatisticsMessageAroundRingCounter.await();
             //logger.info("Latch released : loadmap SIZE "+ this.loadMap.size());
             //lets add the current nodes load to the loadMap which has peer loads
-            logger.info("Starting load balancing");
+            //logger.info("Starting load balancing");
             int selfLoad = stats.getCurrentTasks().get();
 //        this.loadMap.put(this.nodeIP+":"+this.nodePort, selfLoad);
 
@@ -251,8 +251,8 @@ public class ComputeNode implements Node{
             //as other nodes have already attained equilibrium.
             //but wait
             if (nodeWithMaxLoad.equals(nodeWithMinLoad)) {
-                logger.info("All other nodes balanced. So no other node available for" +
-                        " further balance ops. So terminating");
+                //logger.info("All other nodes balanced. So no other node available for" +
+                        //" further balance ops. So terminating");
                 //printCurrentLoadMap();
                 //TODO: maybe send registry a message saying load balance done
                 return;
@@ -268,8 +268,8 @@ public class ComputeNode implements Node{
             int currentMaxLoad;
             int currentMinLoad;
 
-            logger.info("Global target load size after balance " + targetLoadInNetwork);
-            logger.info("Initial load size in this node " + selfLoad);
+            //logger.info("Global target load size after balance " + targetLoadInNetwork);
+            //logger.info("Initial load size in this node " + selfLoad);
             while (selfLoad != targetLoadInNetwork) {
                 if (selfLoad < targetLoadInNetwork) {
                     Optional<Map.Entry<String, Integer>> entryWithMaxValueTemp = getMaxLoadEntrySet();
@@ -345,7 +345,7 @@ public class ComputeNode implements Node{
             //this node has balanced load. we're done here. broadcast that this
             //node is balanced and should not be factored into load balancing
             //TODO
-            logger.info("Final self load after balance completed = " + selfLoad);
+           // logger.info("Final self load after balance completed = " + selfLoad);
             this.loadMap.replace(nodeIP + ":" + nodePort, selfLoad);
 
             balancedNodesLocalCopy.add(this.nodeIP + ":" + this.nodePort);
@@ -364,10 +364,10 @@ public class ComputeNode implements Node{
                     throw new RuntimeException(e);
                 }
             });
-            logger.info("Load balancing done");
+           // logger.info("Load balancing done");
             //printCurrentLoadMap();
             if (threadPool != null) {
-                logger.info("Reusing old thread pool");
+               // logger.info("Reusing old thread pool");
                 threadPool.resetSubmittedTasks(stats.getCurrentTasks().get());
                 //threadPool.stop(); //clean up before starting new threadpool instance
             }
@@ -377,14 +377,14 @@ public class ComputeNode implements Node{
             submitAndWaitUntilTasksComplete();
         }
         else {
-            logger.info("Need load balancer token to start");
+            //logger.info("Need load balancer token to start");
         }
     }
 
     private void submitAndWaitUntilTasksComplete() {
         long startTime = System.nanoTime();
-        System.out.println("*********COMPLETED TASKS***********");
-        System.out.println();
+       // System.out.println("*********COMPLETED TASKS***********");
+        //System.out.println();
         submitTasks();
         try {
             boolean taskComplete = threadPool.awaitCompletion();
@@ -393,15 +393,15 @@ public class ComputeNode implements Node{
                 long endTime = System.nanoTime();
                 long executionTime = endTime - startTime;
                 long numSecs = executionTime/1_000_000_000;
-                System.out.println("**********************");
-                System.out.println("************METRICS**********");
-                System.out.println("All tasks completed in "+ numSecs + " secs");
+                //System.out.println("**********************");
+                //System.out.println("************METRICS**********");
+                //System.out.println("All tasks completed in "+ numSecs + " secs");
                 //System.out.println(stats.getCurrentTasks().get());
                 stats.setCompletedTasks(stats.getCurrentTasks().get());
                 if (numSecs != 0) {
-                    System.out.println("Task completion rate (per sec) = " + stats.getCurrentTasks().get() / numSecs);
+                   // System.out.println("Task completion rate (per sec) = " + stats.getCurrentTasks().get() / numSecs);
                 }
-                System.out.println("**********************");
+               // System.out.println("**********************");
                 //inform registry about task completion
 
                 TaskCompleteResponse resp = new TaskCompleteResponse(nodeIP, nodePort, stats);
@@ -485,7 +485,7 @@ public class ComputeNode implements Node{
                 //String userInput = scan.nextLine();
                 BufferedReader inputReader = new BufferedReader(new InputStreamReader(System.in));
                 String userInput = inputReader.readLine();
-                System.out.println("User input detected " + userInput);
+               // System.out.println("User input detected " + userInput);
                 if (userInput.equals(UserCommands.EXIT_OVERLAY.getCmd()) || userInput.equals(String.valueOf(UserCommands.EXIT_OVERLAY.getCmdId()))) {
                     //exit everything
                     running = false;
@@ -500,7 +500,7 @@ public class ComputeNode implements Node{
                     node.getPeerConnections().forEach((k, v) -> {
                         System.out.println(k + " :  " + v);
                     });
-                    System.out.println("Total neighbor Connections # " +node.getPeerConnections().size());
+                   System.out.println("Total neighbor Connections # " +node.getPeerConnections().size());
                 }
                 else if (userInput.equals(UserCommands.MESSAGE_NEIGHBOR.getCmd()) || userInput.equals(String.valueOf(UserCommands.MESSAGE_NEIGHBOR.getCmdId()))) {
                     talkToNeighbor();
@@ -630,18 +630,18 @@ public class ComputeNode implements Node{
 
     public synchronized void receiveServerData(ServerResponse res) {
         if (res.getRequestType() != null && res.getRequestType().equals(RequestType.REGISTER)) {
-            logger.info(res.getAdditionalInfo());
+           // logger.info(res.getAdditionalInfo());
         }
         else if (res.getRequestType() != null && res.getRequestType().equals(RequestType.DEREGISTER)) {
             try {
-                logger.info(res.getAdditionalInfo());
+                //logger.info(res.getAdditionalInfo());
                 this.registryConnection.closeConnection();
             } catch (IOException | InterruptedException e) {
                 throw new RuntimeException(e);
             }
         }
         else if (res.getRequestType() != null && res.getRequestType().equals(RequestType.LOAD_UPDATE)) {
-            logger.info("****** New comms from Peer server ******");
+           // logger.info("****** New comms from Peer server ******");
             //TODO TOPLAN: Might need to implement the token based approach. Say node x modifies the load count
             //for this node, but if this node already did its compute with the old value, then we have a problem
             //System.out.println("Old load map");
@@ -652,7 +652,7 @@ public class ComputeNode implements Node{
             //printCurrentLoadMap();
         }
         else if (res.getRequestType() != null && res.getRequestType().equals(RequestType.MESSAGE_ROUND_INITIATE)) {
-            logger.info("****** New Message round instruction received from  server ******");
+          //  logger.info("****** New Message round instruction received from  server ******");
             //start the load balance and the task rounds after lb
             if (res.getAdditionalInfo().contains("TOKEN")) {
                 loadBalanceOriginTokenReceived = true;
@@ -683,13 +683,13 @@ public class ComputeNode implements Node{
 
     //this is basically our init
     public synchronized void initThreadCount(TopologyInfo info) {
-        logger.info("Received topology info "+ info);
+       // logger.info("Received topology info "+ info);
 
         String[] elements = info.getNodeRingInfo().split("->");
 
         //first setup threadpool
         if (threadPool != null) {
-            logger.info("Cleaning up old thread pool instance");
+           // logger.info("Cleaning up old thread pool instance");
             threadPool.stop(); //clean up before starting new threadpool instance
             threadPool = null;
         }
@@ -738,7 +738,7 @@ public class ComputeNode implements Node{
         generateTasks();
         try {
             taskGeneratedCounter.await();
-            logger.info("All tasks generated");
+         //   logger.info("All tasks generated");
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
@@ -746,7 +746,7 @@ public class ComputeNode implements Node{
 
     //send task info to peer that requests it.
     public synchronized void sendTaskInfo(ClientConnection peerConnection, TCPConnection connection) {
-        logger.info("Received task load request from source node");
+       // logger.info("Received task load request from source node");
         String peer = peerConnection.getIpAddress()+":"+peerConnection.getPort();
 
         TCPConnection peerConn = this.peerConnections.get(peer);
@@ -755,7 +755,7 @@ public class ComputeNode implements Node{
         try {
             peerConn.getSenderThread().sendData(load.marshal());
             //peerConn.startConnection();
-            logger.info("Sent stats to "+ peer);
+           // logger.info("Sent stats to "+ peer);
         } catch (InterruptedException | IOException e) {
             e.printStackTrace();
             throw new RuntimeException(e);
@@ -873,7 +873,7 @@ public class ComputeNode implements Node{
     public synchronized void copyStaticBalancedNodesInfoToLocal(BalancedNodes balanced) {
         this.balancedNodesLocalCopy.addAll(Arrays.asList(BalancedNodes.getBalancedNodes()));
         //System.out.println("Updated balanced nodes list in this node.");
-        logger.info("Origin node balanced. Starting tasks in the destination nodes");
+       // logger.info("Origin node balanced. Starting tasks in the destination nodes");
 
         String balanceNodeId = balanced.getBalancedNodeInfo().split("->")[0];
         int balancedNodeLoad = Integer.parseInt(balanced.getBalancedNodeInfo().split("->")[1]);
@@ -883,7 +883,7 @@ public class ComputeNode implements Node{
         // at the self node , so lets run the tasks in the target nodes.
         //not the node with balance token
         if (threadPool != null) {
-            logger.info("Reusing old thread pool");
+           // logger.info("Reusing old thread pool");
             threadPool.resetSubmittedTasks(stats.getCurrentTasks().get());
             //threadPool.stop(); //clean up before starting new threadpool instance
         }

@@ -23,7 +23,7 @@ public class ThreadPool {
             ThreadPoolThread thread = new ThreadPoolThread("thread " + i, taskQueue, taskCompletionLatch);
             threadList.add(thread);
         }
-        System.out.println("Thread pool created with # of threads "+ numThreads);
+        //System.out.println("Thread pool created with # of threads "+ numThreads);
 
         for (ThreadPoolThread runnable: threadList) {
             new Thread(runnable).start();
@@ -57,7 +57,7 @@ public class ThreadPool {
 
     public boolean awaitCompletion() throws InterruptedException {
         taskCompletionLatch.await();
-        System.out.println("All tasks complete");
+        //System.out.println("All tasks complete");
         return true; // All tasks
     }
 

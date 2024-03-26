@@ -54,7 +54,7 @@ public class ThreadPoolThread implements Runnable {
 
     public boolean awaitCompletion() throws InterruptedException {
         taskCompletionLatch.await();
-        System.out.println("All tasks complete");
+        //System.out.println("All tasks complete");
         return true; // All tasks have completed
     }
 
